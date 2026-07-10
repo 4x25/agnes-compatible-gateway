@@ -1,11 +1,14 @@
-# Deno
-# https://deno.com/
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
 
-# Cache directory (when using project-local DENO_DIR)
-# https://docs.deno.com/runtime/fundamentals/setup/#deno_dir
-.deno/
+# Fresh build directory
+_fresh/
+# npm + other dependencies
+node_modules/
+vendor/
 
-# Coverage reports
-# https://docs.deno.com/runtime/reference/cli/coverage/
-coverage/
-*.lcov
+deno-lock.json
