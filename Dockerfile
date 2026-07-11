@@ -19,4 +19,4 @@ COPY --from=build --chown=deno:deno /app/_fresh ./_fresh
 USER deno
 EXPOSE 8000
 
-CMD ["deno", "serve", "--allow-env=AGNES_BASE_URL,DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA", "--allow-net", "--allow-read", "--port=8000", "_fresh/server.js"]
+CMD ["deno", "serve", "--allow-env=AGNES_BASE_URL,DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA", "--allow-net", "--allow-read=/app/_fresh", "--port=8000", "_fresh/server.js"]
