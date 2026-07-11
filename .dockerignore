@@ -1,0 +1,10 @@
+.git
+.github
+.vscode
+_fresh
+coverage
+node_modules
+tests
+.env
+.env.*
+*.log
