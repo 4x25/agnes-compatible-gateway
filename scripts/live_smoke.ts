@@ -1,4 +1,3 @@
-import { createGatewayApp } from "../gateway/app.ts";
 import { isRecord } from "../gateway/errors.ts";
 
 const CHAT_MODEL = "agnes-2.0-flash";
@@ -11,9 +10,106 @@ const VIDEO_POLL_INTERVAL_MS = 20_000;
 const VIDEO_TIMEOUT_MS = 12 * 60_000;
 const PUBLIC_REFERENCE_IMAGE =
   "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Example.jpg/512px-Example.jpg";
+const SAFE_ERROR_CODE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+
+class SmokeFailure extends Error {}
 
 function check(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
+  if (!condition) throw new SmokeFailure(message);
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "[::1]") return true;
+  const octets = hostname.split(".");
+  return octets.length === 4 && octets[0] === "127" &&
+    octets.every((octet) => /^\d{1,3}$/.test(octet));
+}
+
+export function parseGatewayBaseUrl(value: string | undefined): URL {
+  check(
+    value !== undefined && value.trim().length > 0,
+    "GATEWAY_URL is required in preview mode.",
+  );
+
+  const candidate = value.trim();
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new SmokeFailure("GATEWAY_URL must be an absolute URL.");
+  }
+
+  check(
+    url.protocol === "http:" || url.protocol === "https:",
+    "GATEWAY_URL must use HTTP or HTTPS.",
+  );
+  check(
+    /^https?:\/\//i.test(candidate),
+    "GATEWAY_URL must use a canonical HTTP(S) URL.",
+  );
+  check(
+    url.protocol === "https:" || isLoopbackHostname(url.hostname),
+    "GATEWAY_URL must use HTTPS unless it targets an explicit loopback host.",
+  );
+  const authorityStart = candidate.indexOf("://") + 3;
+  const authorityEnd = candidate.slice(authorityStart).search(/[/?#]/);
+  const authority = authorityEnd === -1
+    ? candidate.slice(authorityStart)
+    : candidate.slice(authorityStart, authorityStart + authorityEnd);
+  check(
+    !authority.includes("@") && url.username.length === 0 &&
+      url.password.length === 0,
+    "GATEWAY_URL must not contain credentials.",
+  );
+  check(
+    !candidate.includes("?") && !candidate.includes("#"),
+    "GATEWAY_URL must not contain a query or fragment.",
+  );
+
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/`;
+  return url;
+}
+
+export function gatewayRequestUrl(baseUrl: URL, path: string): URL {
+  return new URL(path.replace(/^\/+/, ""), baseUrl);
+}
+
+export function responseStatusSummary(
+  response: Response,
+  value: unknown,
+): string {
+  let code: string | undefined;
+  if (isRecord(value) && isRecord(value.error)) {
+    const candidate = value.error.code;
+    if (
+      typeof candidate === "string" && SAFE_ERROR_CODE.test(candidate) &&
+      !/^(?:sk-|video_|task_)/i.test(candidate)
+    ) {
+      code = candidate;
+    }
+  }
+  return code === undefined
+    ? `HTTP ${response.status}`
+    : `HTTP ${response.status}, code ${code}`;
+}
+
+export function hasOpenAIErrorEnvelope(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.error)) return false;
+  const { message, type, param, code } = value.error;
+  return typeof message === "string" && typeof type === "string" &&
+    (param === null || typeof param === "string") &&
+    (code === null || typeof code === "string");
+}
+
+export function enforcePreviewWarnings(
+  previewMode: boolean,
+  warningCount: number,
+): void {
+  if (previewMode && warningCount > 0) {
+    throw new SmokeFailure(
+      `Strict preview checks failed with ${warningCount} compatibility warning(s).`,
+    );
+  }
 }
 
 async function readSecretLine(): Promise<string> {
@@ -36,23 +132,13 @@ async function readSecretLine(): Promise<string> {
   }
 }
 
-function responseErrorMessage(value: unknown): string {
-  if (isRecord(value) && isRecord(value.error)) {
-    const message = value.error.message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return "unknown upstream error";
-}
-
 async function jsonValue(response: Response): Promise<unknown> {
   const text = await response.text();
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(
-      `Expected JSON for HTTP ${response.status}, received ${
-        text.slice(0, 160)
-      }`,
+    throw new SmokeFailure(
+      `Expected a JSON response for HTTP ${response.status}.`,
     );
   }
 }
@@ -74,6 +160,7 @@ function firstImageValue(value: unknown, field: "url" | "b64_json"): string {
 }
 
 async function main(): Promise<void> {
+  const previewMode = Deno.args.includes("--preview");
   const base64Only = Deno.args.includes("--base64-only");
   const editOnly = Deno.args.includes("--edit-only");
   const contentOnlyArgument = Deno.args.find((value) =>
@@ -84,13 +171,18 @@ async function main(): Promise<void> {
   const generatedVideoOnly = Deno.args.includes("--generated-video-only");
   const mediaOnly = Deno.args.includes("--media-only") || videoOnly ||
     generatedVideoOnly;
+  const gatewayBaseUrl = previewMode
+    ? parseGatewayBaseUrl(Deno.env.get("GATEWAY_URL"))
+    : new URL(GATEWAY_ORIGIN);
+  const handler = previewMode
+    ? undefined
+    : (await import("../gateway/app.ts")).createGatewayApp().handler();
   const key = (await readSecretLine()).trim();
   check(key.length > 0, "No API key was provided on stdin.");
   const authorization = `Bearer ${key}`;
-  const handler = createGatewayApp().handler();
   let warnings = 0;
 
-  const request = (
+  const request = async (
     path: string,
     init: RequestInit = {},
     authenticated = true,
@@ -98,13 +190,24 @@ async function main(): Promise<void> {
   ): Promise<Response> => {
     const headers = new Headers(init.headers);
     if (authenticated) headers.set("authorization", authorization);
-    return handler(
-      new Request(`${GATEWAY_ORIGIN}${path}`, {
+    const gatewayRequest = new Request(
+      gatewayRequestUrl(gatewayBaseUrl, path),
+      {
         ...init,
         headers,
+        redirect: "manual",
         signal: AbortSignal.timeout(timeoutMs),
-      }),
+      },
     );
+
+    try {
+      if (handler === undefined) return await fetch(gatewayRequest);
+      return await handler(gatewayRequest);
+    } catch {
+      throw new SmokeFailure(
+        "Request failed before receiving an HTTP response.",
+      );
+    }
   };
 
   const post = (
@@ -131,7 +234,10 @@ async function main(): Promise<void> {
       response_format: "b64_json",
     });
     const body = await jsonValue(response);
-    check(response.ok, `Base64 image failed: ${responseErrorMessage(body)}`);
+    check(
+      response.ok,
+      `Base64 image failed: ${responseStatusSummary(response, body)}.`,
+    );
     check(
       firstImageValue(body, "b64_json").length > 100,
       "Base64 image is too short.",
@@ -151,7 +257,9 @@ async function main(): Promise<void> {
     const sourceBody = await jsonValue(sourceResponse);
     check(
       sourceResponse.ok,
-      `Edit source image failed: ${responseErrorMessage(sourceBody)}`,
+      `Edit source image failed: ${
+        responseStatusSummary(sourceResponse, sourceBody)
+      }.`,
     );
     const sourceUrl = firstImageValue(sourceBody, "url");
     const editResponse = await post("/v1/images/edits", {
@@ -164,7 +272,7 @@ async function main(): Promise<void> {
     const editBody = await jsonValue(editResponse);
     check(
       editResponse.ok,
-      `Image edit failed: ${responseErrorMessage(editBody)}`,
+      `Image edit failed: ${responseStatusSummary(editResponse, editBody)}.`,
     );
     firstImageValue(editBody, "url");
     console.log("PASS JSON URL image edit");
@@ -217,7 +325,10 @@ async function main(): Promise<void> {
       chat_template_kwargs: { enable_thinking: false },
     }, CHAT_REQUEST_TIMEOUT_MS);
     const chat = await jsonValue(chatResponse);
-    check(chatResponse.ok, `Chat failed: ${responseErrorMessage(chat)}`);
+    check(
+      chatResponse.ok,
+      `Chat failed: ${responseStatusSummary(chatResponse, chat)}.`,
+    );
     check(
       isRecord(chat) && chat.model === CHAT_MODEL,
       "Chat response model changed.",
@@ -255,7 +366,9 @@ async function main(): Promise<void> {
     const imageUrlBody = await jsonValue(imageUrlResponse);
     check(
       imageUrlResponse.ok,
-      `URL image failed: ${responseErrorMessage(imageUrlBody)}`,
+      `URL image failed: ${
+        responseStatusSummary(imageUrlResponse, imageUrlBody)
+      }.`,
     );
     imageUrl = firstImageValue(imageUrlBody, "url");
     console.log("PASS URL image generation");
@@ -281,18 +394,15 @@ async function main(): Promise<void> {
           console.log("PASS Base64 image generation");
         } else {
           warnings++;
-          const fields = first === undefined
-            ? "none"
-            : Object.keys(first).sort().join(",");
           console.log(
-            `WARN Base64 image response omitted b64_json; returned fields: ${fields}`,
+            "WARN Base64 image response omitted a usable b64_json value",
           );
         }
       } else {
         warnings++;
         console.log(
-          `WARN Base64 image upstream failure (HTTP ${imageBase64Response.status}): ${
-            responseErrorMessage(imageBase64Body)
+          `WARN Base64 image upstream failure: ${
+            responseStatusSummary(imageBase64Response, imageBase64Body)
           }`,
         );
       }
@@ -312,8 +422,8 @@ async function main(): Promise<void> {
       } else {
         warnings++;
         console.log(
-          `WARN image edit upstream failure (HTTP ${imageEditResponse.status}): ${
-            responseErrorMessage(imageEditBody)
+          `WARN image edit upstream failure: ${
+            responseStatusSummary(imageEditResponse, imageEditBody)
           }`,
         );
       }
@@ -331,7 +441,9 @@ async function main(): Promise<void> {
   const videoCreate = await jsonValue(videoCreateResponse);
   check(
     videoCreateResponse.ok,
-    `Video create failed: ${responseErrorMessage(videoCreate)}`,
+    `Video create failed: ${
+      responseStatusSummary(videoCreateResponse, videoCreate)
+    }.`,
   );
   check(isRecord(videoCreate), "Video create response must be an object.");
   check(
@@ -340,7 +452,7 @@ async function main(): Promise<void> {
   );
   check(videoCreate.model === VIDEO_MODEL, "Video response model changed.");
   const videoId = videoCreate.id;
-  console.log(`PASS video create (${videoId})`);
+  console.log("PASS video create");
 
   const deadline = Date.now() + VIDEO_TIMEOUT_MS;
   let video = videoCreate;
@@ -353,7 +465,7 @@ async function main(): Promise<void> {
     const pollBody = await jsonValue(pollResponse);
     check(
       pollResponse.ok,
-      `Video poll failed: ${responseErrorMessage(pollBody)}`,
+      `Video poll failed: ${responseStatusSummary(pollResponse, pollBody)}.`,
     );
     check(isRecord(pollBody), "Video poll response must be an object.");
     video = pollBody;
@@ -364,7 +476,7 @@ async function main(): Promise<void> {
   }
   check(
     video.status === "completed",
-    `Video ended with status ${String(video.status)}.`,
+    "Video did not complete successfully.",
   );
   console.log("PASS video completion");
 
@@ -382,39 +494,63 @@ async function main(): Promise<void> {
   );
   console.log("PASS video content redirect");
 
-  const invalidModelResponse = await post("/v1/chat/completions", {
-    model: "gateway-smoke-invalid-model",
-    messages: [{ role: "user", content: "This request should fail." }],
-    max_tokens: 8,
-  }, CHAT_REQUEST_TIMEOUT_MS);
-  const invalidModelBody = await jsonValue(invalidModelResponse);
-  if (invalidModelResponse.ok) {
-    console.log(
-      "WARN Agnes accepted the intentionally invalid model; error smoke skipped",
-    );
-  } else {
-    check(
-      isRecord(invalidModelBody) && isRecord(invalidModelBody.error),
-      "Invalid model did not return an OpenAI error envelope.",
-    );
-    console.log(
-      `PASS Agnes error normalization (HTTP ${invalidModelResponse.status})`,
-    );
-  }
+  const invalidAuthorizationResponse = await request(
+    "/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        authorization: "Bearer gateway-smoke-invalid",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        messages: [{ role: "user", content: "Reply with: ok" }],
+        max_tokens: 8,
+      }),
+    },
+    false,
+    CHAT_REQUEST_TIMEOUT_MS,
+  );
+  const invalidAuthorizationBody = await jsonValue(
+    invalidAuthorizationResponse,
+  );
+  check(
+    !invalidAuthorizationResponse.ok,
+    `Invalid Authorization was accepted: ${
+      responseStatusSummary(
+        invalidAuthorizationResponse,
+        invalidAuthorizationBody,
+      )
+    }.`,
+  );
+  check(
+    hasOpenAIErrorEnvelope(invalidAuthorizationBody),
+    "Invalid Authorization did not return an OpenAI error envelope.",
+  );
+  console.log(
+    `PASS Agnes authentication error normalization (${
+      responseStatusSummary(
+        invalidAuthorizationResponse,
+        invalidAuthorizationBody,
+      )
+    })`,
+  );
+
+  enforcePreviewWarnings(previewMode, warnings);
 
   console.log(
-    warnings === 0
-      ? "SMOKE_RESULT=PASS"
-      : `SMOKE_RESULT=PASS_WITH_WARNINGS (${warnings})`,
+    warnings === 0 ? "SMOKE_RESULT=PASS" : "SMOKE_RESULT=PASS_WITH_WARNINGS",
   );
 }
 
-try {
-  await main();
-} catch (error) {
-  const message = error instanceof Error
-    ? error.message
-    : "unknown smoke failure";
-  console.error(`SMOKE_RESULT=FAIL ${message}`);
-  Deno.exitCode = 1;
+if (import.meta.main) {
+  try {
+    await main();
+  } catch (error) {
+    const message = error instanceof SmokeFailure
+      ? error.message
+      : "Unexpected smoke failure.";
+    console.error(`SMOKE_RESULT=FAIL ${message}`);
+    Deno.exitCode = 1;
+  }
 }

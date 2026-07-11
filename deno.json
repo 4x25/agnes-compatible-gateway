@@ -6,9 +6,11 @@
     "test": "deno test --allow-env=DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA,OPENAI_CUSTOM_HEADERS",
     "test:coverage": "deno test --allow-env=DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA,OPENAI_CUSTOM_HEADERS --coverage=coverage && deno coverage coverage",
     "smoke": "deno run --allow-net --allow-env=DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA scripts/live_smoke.ts",
+    "smoke:preview": "deno run --allow-net --allow-env=GATEWAY_URL scripts/live_smoke.ts --preview",
     "dev": "vite",
     "build": "vite build",
-    "start": "deno serve --allow-env=AGNES_BASE_URL,DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA --allow-net --allow-read _fresh/server.js",
+    "deploy:build": "deno install --frozen && deno task build",
+    "start": "deno serve --allow-env=AGNES_BASE_URL,DENO_DEPLOYMENT_ID,GITHUB_SHA,CI_COMMIT_SHA --allow-net --allow-read=_fresh _fresh/server.js",
     "update": "deno run -A -r jsr:@fresh/update ."
   },
   "lint": {
