@@ -17,11 +17,54 @@ export interface UpstreamResult {
   error?: Response;
 }
 
-export function createAgnesUrls(value: string | URL): AgnesUrls {
-  const baseUrl = new URL(value.toString());
+function rawAuthorityHasUserinfo(value: string): boolean {
+  const match = /^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/i.exec(value);
+  return match?.[1].includes("@") ?? false;
+}
 
-  if (baseUrl.protocol !== "http:" && baseUrl.protocol !== "https:") {
-    throw new TypeError("AGNES_BASE_URL must use http or https.");
+export function parseHttpUrlWithoutUserinfo(value: string): URL | undefined {
+  if (!/^https?:\/\//i.test(value) || rawAuthorityHasUserinfo(value)) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username.length > 0 || url.password.length > 0
+    ) {
+      return undefined;
+    }
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "[::1]") return true;
+
+  const octets = hostname.split(".");
+  return octets.length === 4 && octets[0] === "127" &&
+    octets.every((octet) => /^\d+$/.test(octet));
+}
+
+export function createAgnesUrls(value: string | URL): AgnesUrls {
+  const serialized = value.toString();
+  const baseUrl = new URL(serialized);
+
+  if (baseUrl.protocol !== "https:") {
+    if (baseUrl.protocol !== "http:" || !isLoopbackHostname(baseUrl.hostname)) {
+      throw new TypeError(
+        "AGNES_BASE_URL must use https, except for loopback HTTP development hosts.",
+      );
+    }
+  }
+  if (
+    baseUrl.username.length > 0 || baseUrl.password.length > 0 ||
+    rawAuthorityHasUserinfo(serialized)
+  ) {
+    throw new TypeError("AGNES_BASE_URL must not include URL userinfo.");
   }
   if (baseUrl.search.length > 0 || baseUrl.hash.length > 0) {
     throw new TypeError("AGNES_BASE_URL must not include a query or fragment.");

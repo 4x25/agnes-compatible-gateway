@@ -12,6 +12,7 @@ import {
   buildImageEditRequest,
   buildImageGenerationRequest,
   buildVideoRequest,
+  IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES,
   parseJsonBody,
   parseVideoBody,
   transformCreatedVideo,
@@ -22,6 +23,7 @@ import {
   type AgnesUrls,
   createAgnesUrls,
   DEFAULT_AGNES_BASE_URL,
+  parseHttpUrlWithoutUserinfo,
   passthroughResponse,
   readJsonObject,
   requestUpstream,
@@ -152,7 +154,10 @@ async function handleImageEdit(
   ctx: Context<GatewayState>,
   authorization: string,
 ): Promise<Response> {
-  const parsed = await parseJsonBody(ctx.req);
+  const parsed = await parseJsonBody(
+    ctx.req,
+    IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES,
+  );
   if ("error" in parsed) return parsed.error;
   const transformed = buildImageEditRequest(parsed.value);
   if ("error" in transformed) return transformed.error;
@@ -250,14 +255,7 @@ async function handleVideoGet(
 
 function downloadableUrl(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.toString()
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return parseHttpUrlWithoutUserinfo(value)?.toString();
 }
 
 async function handleVideoContent(

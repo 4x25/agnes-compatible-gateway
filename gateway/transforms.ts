@@ -5,8 +5,12 @@ import {
   missingParameter,
   openAIError,
 } from "./errors.ts";
+import { parseHttpUrlWithoutUserinfo } from "./upstream.ts";
 
 export type BuildResult<T> = { value: T } | { error: Response };
+
+export const STANDARD_REQUEST_BODY_LIMIT_BYTES = 1024 * 1024;
+export const IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES = 20 * 1024 * 1024;
 
 export interface VideoRequestInput {
   model?: unknown;
@@ -21,8 +25,68 @@ export interface BuiltVideoRequest {
   prompt: string;
 }
 
+function requestBodyTooLarge(maxBytes: number): Response {
+  return openAIError(
+    413,
+    `Request body exceeds the ${maxBytes}-byte limit.`,
+    { code: "request_too_large" },
+  );
+}
+
+async function readRequestBody(
+  request: Request,
+  maxBytes: number,
+): Promise<BuildResult<Uint8Array>> {
+  const contentLength = request.headers.get("content-length");
+  if (
+    contentLength !== null && /^\d+$/.test(contentLength.trim()) &&
+    Number(contentLength) > maxBytes
+  ) {
+    if (request.body !== null) {
+      await request.body.cancel().catch(() => undefined);
+    }
+    return { error: requestBodyTooLarge(maxBytes) };
+  }
+
+  if (request.body === null) return { value: new Uint8Array() };
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      if (totalBytes + result.value.byteLength > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { error: requestBodyTooLarge(maxBytes) };
+      }
+      chunks.push(result.value);
+      totalBytes += result.value.byteLength;
+    }
+  } catch {
+    return {
+      error: openAIError(400, "Unable to read request body.", {
+        code: "invalid_request_body",
+      }),
+    };
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { value: body };
+}
+
 export async function parseJsonBody(
   request: Request,
+  maxBytes = STANDARD_REQUEST_BODY_LIMIT_BYTES,
 ): Promise<BuildResult<Record<string, unknown>>> {
   const contentType = request.headers.get("content-type") ?? "";
   const mediaType = contentType.split(";", 1)[0].trim().toLowerCase();
@@ -34,9 +98,12 @@ export async function parseJsonBody(
     };
   }
 
+  const body = await readRequestBody(request, maxBytes);
+  if ("error" in body) return body;
+
   let value: unknown;
   try {
-    value = await request.json();
+    value = JSON.parse(new TextDecoder().decode(body.value));
   } catch {
     return {
       error: openAIError(400, "Invalid JSON body.", {
@@ -133,20 +200,26 @@ export function buildImageGenerationRequest(
 }
 
 function normalizeImages(value: unknown): BuildResult<string[]> {
-  if (typeof value === "string") {
-    return value.length > 0
-      ? { value: [value] }
-      : { error: invalidParameter("image", "a non-empty string or array") };
+  const validImageReference = (item: unknown): item is string => {
+    if (typeof item !== "string" || item.length === 0) return false;
+    if (parseHttpUrlWithoutUserinfo(item) !== undefined) return true;
+    return /^data:image\/[a-z\d][a-z\d.+-]*(?:;[^,]*)?,.+$/is.test(item);
+  };
+  const expected =
+    "an HTTP(S) URL without userinfo, an image Data URI, or a non-empty array of those values";
+
+  if (validImageReference(value)) {
+    return { value: [value] };
   }
 
   if (
     Array.isArray(value) && value.length > 0 &&
-    value.every((item) => typeof item === "string" && item.length > 0)
+    value.every(validImageReference)
   ) {
     return { value: value as string[] };
   }
 
-  return { error: invalidParameter("image", "a non-empty string or array") };
+  return { error: invalidParameter("image", expected) };
 }
 
 export function buildImageEditRequest(
@@ -213,8 +286,17 @@ export async function parseVideoBody(
   }
 
   let form: FormData;
+  const body = await readRequestBody(
+    request,
+    STANDARD_REQUEST_BODY_LIMIT_BYTES,
+  );
+  if ("error" in body) return body;
   try {
-    form = await request.formData();
+    form = await new Request(request.url, {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body: body.value.buffer as ArrayBuffer,
+    }).formData();
   } catch {
     return {
       error: openAIError(400, "Invalid multipart form body.", {
@@ -248,14 +330,9 @@ function publicImageUrl(value: unknown): string | undefined {
   else if (typeof value === "string") candidate = value;
   if (typeof candidate !== "string") return undefined;
 
-  try {
-    const url = new URL(candidate);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? candidate
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return parseHttpUrlWithoutUserinfo(candidate) === undefined
+    ? undefined
+    : candidate;
 }
 
 export function buildVideoRequest(

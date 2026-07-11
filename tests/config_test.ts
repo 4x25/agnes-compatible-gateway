@@ -17,12 +17,32 @@ Deno.test("Agnes URL builder normalizes /v1 and derives sibling /agnesapi", () =
 
 Deno.test("Agnes URL builder rejects ambiguous or unsafe base URLs", () => {
   assertThrows(() => createAgnesUrls("ftp://agnes.test/v1"), TypeError);
+  assertThrows(() => createAgnesUrls("http://agnes.test/v1"), TypeError);
+  assertThrows(() => createAgnesUrls("http://0.0.0.0/v1"), TypeError);
+  assertThrows(
+    () => createAgnesUrls("https://user:secret@agnes.test/v1"),
+    TypeError,
+  );
+  assertThrows(() => createAgnesUrls("https://@agnes.test/v1"), TypeError);
   assertThrows(() => createAgnesUrls("https://agnes.test/api"), TypeError);
   assertThrows(() => createAgnesUrls("https://agnes.test/v1?q=1"), TypeError);
   assertThrows(
     () => createAgnesUrls("https://agnes.test/v1#fragment"),
     TypeError,
   );
+});
+
+Deno.test("Agnes URL builder permits HTTP only for explicit loopback hosts", () => {
+  for (
+    const baseUrl of [
+      "http://localhost:8000/v1",
+      "http://127.0.0.1:8000/v1",
+      "http://127.42.0.7/v1",
+      "http://[::1]:8000/v1",
+    ]
+  ) {
+    assertEquals(createAgnesUrls(baseUrl).baseUrl.toString(), baseUrl);
+  }
 });
 
 Deno.test("video durations map to the Agnes 8n+1 frame rule", () => {

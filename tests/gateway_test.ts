@@ -5,6 +5,10 @@ import {
   assertObjectMatch,
 } from "@std/assert";
 import { createGatewayApp } from "../gateway/app.ts";
+import {
+  IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES,
+  STANDARD_REQUEST_BODY_LIMIT_BYTES,
+} from "../gateway/transforms.ts";
 
 const GATEWAY_ORIGIN = "https://gateway.test";
 const AGNES_BASE_URL = "https://agnes.test/proxy/v1/";
@@ -156,6 +160,117 @@ Deno.test("malformed bodies, unsupported media, unknown routes, and empty IDs us
     error: { param: "video_id" },
   });
   assertEquals(gateway.calls.length, 0);
+});
+
+Deno.test("request body limits reject declared and streamed oversized bodies before upstream", async (t) => {
+  await t.step("declared ordinary JSON size", async () => {
+    const gateway = createTestGateway(() => {
+      throw new Error("upstream must not be called");
+    });
+    const response = await gateway.request("/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        authorization: AUTHORIZATION,
+        "content-type": "application/json",
+        "content-length": String(STANDARD_REQUEST_BODY_LIMIT_BYTES + 1),
+      },
+      body: "{}",
+    });
+
+    assertEquals(response.status, 413);
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "request_too_large", type: "invalid_request_error" },
+    });
+    assertEquals(gateway.calls.length, 0);
+  });
+
+  await t.step("streamed ordinary JSON size", async () => {
+    const gateway = createTestGateway(() => {
+      throw new Error("upstream must not be called");
+    });
+    let remaining = STANDARD_REQUEST_BODY_LIMIT_BYTES + 1;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const size = Math.min(256 * 1024, remaining);
+        controller.enqueue(new Uint8Array(size));
+        remaining -= size;
+        if (remaining === 0) controller.close();
+      },
+    });
+    const response = await gateway.request("/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        authorization: AUTHORIZATION,
+        "content-type": "application/json",
+      },
+      body,
+    });
+
+    assertEquals(response.status, 413);
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "request_too_large" },
+    });
+    assertEquals(gateway.calls.length, 0);
+  });
+
+  await t.step("multipart video size", async () => {
+    const gateway = createTestGateway(() => {
+      throw new Error("upstream must not be called");
+    });
+    const form = new FormData();
+    form.set("model", "m");
+    form.set("prompt", "x".repeat(STANDARD_REQUEST_BODY_LIMIT_BYTES));
+    const response = await gateway.request("/v1/videos", {
+      method: "POST",
+      headers: { authorization: AUTHORIZATION },
+      body: form,
+    });
+
+    assertEquals(response.status, 413);
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "request_too_large" },
+    });
+    assertEquals(gateway.calls.length, 0);
+  });
+
+  await t.step("declared image edit size", async () => {
+    const gateway = createTestGateway(() => {
+      throw new Error("upstream must not be called");
+    });
+    const response = await gateway.request("/v1/images/edits", {
+      method: "POST",
+      headers: {
+        authorization: AUTHORIZATION,
+        "content-type": "application/json",
+        "content-length": String(IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES + 1),
+      },
+      body: "{}",
+    });
+
+    assertEquals(response.status, 413);
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "request_too_large" },
+    });
+    assertEquals(gateway.calls.length, 0);
+  });
+});
+
+Deno.test("JSON image edits use the larger body limit for Data URIs", async () => {
+  const gateway = createTestGateway(() => json({ created: 1, data: [] }));
+  const response = await gateway.request(
+    "/v1/images/edits",
+    postJson({
+      model: "m",
+      prompt: "p",
+      size: "1x1",
+      image: `data:image/png;base64,${
+        "A".repeat(STANDARD_REQUEST_BODY_LIMIT_BYTES)
+      }`,
+    }),
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals(gateway.calls.length, 1);
 });
 
 Deno.test("chat completion filters fields, maps max_completion_tokens, and preserves response", async () => {
@@ -357,6 +472,32 @@ Deno.test("image edits normalize URL and Data URI inputs into Agnes extra_body",
   });
 });
 
+Deno.test("image edits reject unsupported or credential-bearing image references", async () => {
+  const gateway = createTestGateway(() => {
+    throw new Error("upstream must not be called");
+  });
+  const invalidReferences: unknown[] = [
+    "not-a-url",
+    "ftp://images.test/in.png",
+    "https://user:secret@images.test/in.png",
+    "https://@images.test/in.png",
+    "data:text/plain;base64,aGVsbG8=",
+    ["https://images.test/valid.png", "javascript:alert(1)"],
+  ];
+
+  for (const image of invalidReferences) {
+    const response = await gateway.request(
+      "/v1/images/edits",
+      postJson({ model: "m", prompt: "p", size: "1x1", image }),
+    );
+    assertEquals(response.status, 400, JSON.stringify(image));
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "invalid_parameter", param: "image" },
+    });
+  }
+  assertEquals(gateway.calls.length, 0);
+});
+
 Deno.test("JSON video creation maps OpenAI fields and returns video_id as id", async () => {
   const gateway = createTestGateway(() =>
     json({
@@ -459,7 +600,7 @@ Deno.test("multipart video creation accepts a JSON input_reference field", async
   });
 });
 
-Deno.test("video creation ignores unsupported duration, invalid size, and non-URL reference", async () => {
+Deno.test("video creation ignores unsupported fields and unsafe references", async () => {
   const gateway = createTestGateway(() =>
     json({ video_id: "video_ignored", model: "m", status: "queued" })
   );
@@ -474,6 +615,18 @@ Deno.test("video creation ignores unsupported duration, invalid size, and non-UR
     }),
   );
   assertEquals(await gateway.calls[0].json(), { model: "m", prompt: "p" });
+
+  await gateway.request(
+    "/v1/videos",
+    postJson({
+      model: "m",
+      prompt: "p",
+      input_reference: {
+        image_url: "https://user:secret@images.test/start.png",
+      },
+    }),
+  );
+  assertEquals(await gateway.calls[1].json(), { model: "m", prompt: "p" });
 });
 
 Deno.test("video creation rejects malformed successful Agnes responses", async () => {
@@ -607,6 +760,28 @@ Deno.test("video content redirects only completed videos with an HTTP(S) URL", a
       method: "GET",
       headers: { authorization: AUTHORIZATION },
     });
+    assertEquals(response.status, 502);
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "invalid_upstream_response" },
+    });
+  });
+
+  await t.step("URL userinfo", async () => {
+    const gateway = createTestGateway(() =>
+      json({
+        video_id: "video_credentials",
+        model: "m",
+        status: "completed",
+        url: "https://user:secret@storage.test/output.mp4",
+      })
+    );
+    const response = await gateway.request(
+      "/v1/videos/video_credentials/content",
+      {
+        method: "GET",
+        headers: { authorization: AUTHORIZATION },
+      },
+    );
     assertEquals(response.status, 502);
     assertObjectMatch(await responseJson(response), {
       error: { code: "invalid_upstream_response" },
