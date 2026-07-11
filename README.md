@@ -20,9 +20,10 @@ OpenAI-compatible shapes.
 > affiliated with or endorsed by Agnes AI or OpenAI.
 
 > [!NOTE]
-> **Project status:** the MVP is implemented and has passed the local automated
-> suite and a real Agnes smoke test. Final validation on a Deno Deploy preview
-> and the `v0.1.0` release are still pending.
+> **Project status:** this is a pre-release, source-only project. There is no
+> hosted gateway, tagged release, or prebuilt container image yet. The MVP has
+> passed the local automated suite and a real Agnes smoke test; final validation
+> on a Deno Deploy preview and the `v0.1.0` release are still pending.
 
 ## Highlights
 
@@ -49,9 +50,9 @@ forwards its value unchanged and lets Agnes validate the credential.
 | `POST` | `/v1/chat/completions`         | JSON: `model` and a non-empty `messages` array | Non-streaming JSON and streaming SSE; successful Agnes bodies are passed through |
 | `POST` | `/v1/images/generations`       | JSON: `model`, `prompt`, and `size`            | URL output by default; `response_format=b64_json` is supported                   |
 | `POST` | `/v1/images/edits`             | JSON: `model`, `prompt`, `size`, and `image`   | `image` is a URL/Data URI string or array; multipart edits are not supported     |
-| `POST` | `/v1/videos`                   | JSON or multipart: `model` and `prompt`        | Supports text-to-video and public HTTP(S) reference images                       |
+| `POST` | `/v1/videos`                   | JSON or multipart: `model` and `prompt`        | Supports text-to-video and HTTP(S) reference-image URLs without userinfo         |
 | `GET`  | `/v1/videos/:video_id`         | A non-empty video ID                           | Stateless Agnes status lookup returned as an OpenAI Video subset                 |
-| `GET`  | `/v1/videos/:video_id/content` | A non-empty video ID                           | Completed: safe `302`; pending/failed: `409`; invalid completed URL: `502`       |
+| `GET`  | `/v1/videos/:video_id/content` | A non-empty video ID                           | Completed: scheme-restricted `302`; pending/failed: `409`; invalid URL: `502`    |
 
 This table describes the complete public surface. Routes such as
 `/v1/responses`, model listing, file upload, video listing, deletion, remixing,
@@ -84,9 +85,16 @@ For each request, the gateway:
 
 ### Requirements
 
-- [Deno 2.9.2 or later](https://docs.deno.com/runtime/)
+- [Deno](https://docs.deno.com/runtime/) (tested with `2.9.2`)
+- Git, Bash, and curl for the commands shown below
 - Outbound HTTPS access to the Agnes API
-- A caller-owned Agnes API key for real requests
+- A caller-owned Agnes API key and a model name from the Agnes
+  [text](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash.md),
+  [image](https://agnes-ai.com/zh-Hans/docs/agnes-image-21-flash.md), or
+  [video](https://agnes-ai.com/zh-Hans/docs/agnes-video-v20.md) documentation
+
+The model IDs in this README are upstream examples, not a gateway-maintained
+support list. The gateway does not provide model discovery or validation.
 
 Clone the repository, install the locked dependencies, and start the development
 server:
@@ -106,13 +114,26 @@ deno task build
 deno task start
 ```
 
+Confirm the local authorization guard without a key or Agnes usage:
+
+```sh
+curl --include http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+The response should be an OpenAI-style `401`. Continue with the
+[authenticated examples](#usage) when ready. Real authenticated calls consume
+the caller's Agnes quota, and image/video requests create billable upstream
+jobs.
+
 ## Configuration
 
 The gateway has one optional application setting:
 
-| Variable         | Required | Default                          | Description                                                                                                                 |
-| ---------------- | -------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `AGNES_BASE_URL` | No       | `https://apihub.agnes-ai.com/v1` | Absolute HTTP(S) Agnes base URL. It must end in `/v1`, may have a trailing slash, and must not contain a query or fragment. |
+| Variable         | Required | Default                          | Description                                                                                                                      |
+| ---------------- | -------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `AGNES_BASE_URL` | No       | `https://apihub.agnes-ai.com/v1` | HTTPS Agnes base URL ending in `/v1`, with no userinfo, query, or fragment. Loopback HTTP is allowed only for local development. |
 
 For example:
 
@@ -125,7 +146,8 @@ credential on the gateway. API keys belong to callers and arrive only through
 each request's `Authorization` header.
 
 A custom `AGNES_BASE_URL` receives caller credentials. Configure only an
-upstream that you operate or trust.
+upstream that you operate or trust. Plain HTTP is rejected except for
+`localhost`, `127.0.0.0/8`, and `[::1]` development endpoints.
 
 ## Usage
 
@@ -148,10 +170,12 @@ The variable and helper exist only in the caller's current shell; they are not
 gateway configuration. In an application, obtain the caller key from an
 appropriate secret source rather than embedding it in code.
 
-### OpenAI JavaScript SDK
+### OpenAI JavaScript SDK with Deno
 
-The automated contract suite verifies OpenAI JavaScript SDK `6.45.0` with chat
-completions, image generation, and video creation:
+The automated contract suite verifies curl-compatible HTTP calls and OpenAI
+JavaScript SDK `6.45.0` with chat completions, image generation, and video
+creation. Other clients may work within the documented wire subset but are not
+verified. Save this example as `example.ts`:
 
 ```ts
 import OpenAI from "npm:openai@6.45.0";
@@ -188,6 +212,9 @@ retries upstream calls.
 
 The SDK's `images.edit()` method is not compatible with the MVP because it sends
 multipart files. Use the JSON endpoint shown below for image edits.
+
+This is a server-side Deno example. Browser cross-origin use is not enabled by
+default, and an Agnes API key must never be embedded in browser code.
 
 ### Chat completion
 
@@ -242,7 +269,7 @@ gateway_curl "$GATEWAY_URL/v1/images/edits" \
     "prompt": "Make the object orange",
     "size": "1024x768",
     "image": [
-      "https://example.com/input.png"
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Example.jpg/512px-Example.jpg"
     ],
     "response_format": "url"
   }'
@@ -262,7 +289,7 @@ gateway_curl "$GATEWAY_URL/v1/videos" \
     "model": "agnes-video-v2.0",
     "prompt": "The subject turns toward the camera",
     "input_reference": {
-      "image_url": "https://example.com/start.png"
+      "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Example.jpg/512px-Example.jpg"
     },
     "seconds": "4",
     "size": "1280x720"
@@ -301,7 +328,8 @@ unset AGNES_API_KEY GATEWAY_URL VIDEO_ID
 ### Deno Deploy
 
 1. Import this repository into [Deno Deploy](https://deno.com/deploy).
-2. Set the build command to `deno task build`.
+2. Set the build command to `deno task deploy:build` so manual npm dependencies
+   are installed from `deno.lock` before Fresh builds.
 3. Set the application entrypoint to `_fresh/server.js`.
 4. Optionally set `AGNES_BASE_URL`. Do not add an API key.
 5. Validate a preview deployment before promoting it.
@@ -328,8 +356,8 @@ docker run --rm -p 8000:8000 \
 ```
 
 The runtime container runs as the unprivileged `deno` user. Its Deno permissions
-allow network access, reading files inside the container, and reading only the
-listed Agnes/Fresh environment variables.
+allow network access, reading only `/app/_fresh`, and reading only the listed
+Agnes/Fresh environment variables.
 
 ## Compatibility and limitations
 
@@ -348,24 +376,29 @@ listed Agnes/Fresh environment variables.
 - **Image generation:** URL output is the default. Current Agnes runtime
   behavior requires two upstream flags for `b64_json`, which the gateway sets
   automatically.
-- **Image edits:** only JSON URL/Data URI strings are supported. Multipart
-  files, masks, and `file_id` inputs are outside the MVP. Inputs are neither
-  fetched nor decoded by the gateway.
+- **Image edits:** only JSON HTTP(S) URLs without userinfo and `image/*` Data
+  URIs are supported. Multipart files, masks, and `file_id` inputs are outside
+  the MVP. Inputs are neither fetched nor decoded by the gateway.
 - **Video duration:** `seconds` values `4`, `8`, and `12` map to 24 FPS and
   `97`, `193`, and `289` frames. Other values are ignored so Agnes can use its
   default.
 - **Video size:** a valid `WIDTHxHEIGHT` value maps to integer `width` and
   `height`. Invalid values are ignored.
-- **Video references:** only public HTTP(S) reference-image URLs are mapped.
-  Uploaded files, `file_id` references, and Data URIs are ignored.
+- **Video references:** syntactically valid HTTP(S) reference-image URLs without
+  userinfo are mapped. Uploaded files, `file_id` references, and Data URIs are
+  ignored. The gateway does not resolve the hostname or prove public
+  reachability; the caller and Agnes are responsible for accessibility.
 - **Video content:** thumbnail and spritesheet variants are not implemented. A
-  valid completed asset returns `302` with `no-store` and `no-referrer`
-  protections; a completed response with a missing, malformed, or non-HTTP(S)
-  URL returns `502`.
+  syntactically valid completed HTTP(S) asset URL without userinfo returns `302`
+  with `no-store` and `no-referrer` protections. The gateway does not resolve
+  the redirect hostname. A missing or malformed URL returns `502`.
 - **Video metadata:** fields Agnes does not provide during lookup are omitted,
   not fabricated.
 - **CORS and platform services:** CORS, user authentication, billing, quotas,
   rate limiting, storage, and job orchestration are not included.
+- **Body limits:** ordinary JSON and video multipart bodies are limited to 1
+  MiB; JSON image edits are limited to 20 MiB for Data URIs. Both declared and
+  streamed overages return `413` before Agnes is called.
 - **Retries:** the gateway never retries Agnes calls. Callers should decide
   their own policy carefully, especially for image and video creation.
 
@@ -389,12 +422,12 @@ when Agnes supplies them.
 
 ## Security model
 
-- Every public API call requires `Authorization`, which is forwarded unchanged
-  for that request only.
+- Every supported API call requires `Authorization`, which is forwarded
+  unchanged for that request only.
 - The gateway does not read a server-side key, persist credentials, or add
   application-level logs for headers, bodies, prompts, Data URIs, or asset URLs.
-- Request bodies exist in memory only long enough to validate and transform the
-  current call. Platform request-size and memory limits still apply.
+- Request bodies exist in memory only long enough to enforce the fixed limits,
+  validate, and transform the current call. Platform limits may be lower.
 - No credentials, generated assets, user data, or video task mappings are
   stored.
 - Use HTTPS in production. The deployment operator, reverse proxy, hosting
@@ -404,25 +437,33 @@ when Agnes supplies them.
   arguments, container configuration, or CI. Use a disposable caller-owned key
   for manual smoke tests and revoke it afterward.
 
+Report vulnerabilities privately according to [`SECURITY.md`](SECURITY.md);
+never include credentials or sensitive request data in a public issue.
+
 ## Development and testing
 
-| Command                   | Purpose                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| `deno install --frozen`   | Install exactly the versions in `deno.lock`                                      |
-| `deno task dev`           | Start the Fresh/Vite development server                                          |
-| `deno task check`         | Check formatting, lint rules, and TypeScript types                               |
-| `deno task test`          | Run mocked endpoint contracts and the OpenAI SDK test                            |
-| `deno task test:coverage` | Collect profiles under `coverage/` and print a local coverage report             |
-| `deno task build`         | Build the Fresh production bundle under `_fresh/`                                |
-| `deno task start`         | Serve an existing production bundle on port `8000`                               |
-| `deno task smoke`         | Run the opt-in, side-effectful real-Agnes smoke suite with a key read from stdin |
+| Command                   | Purpose                                                                     |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `deno install --frozen`   | Install exactly the versions in `deno.lock`                                 |
+| `deno task dev`           | Start the Fresh/Vite development server                                     |
+| `deno task check`         | Check formatting, lint rules, and TypeScript types                          |
+| `deno task test`          | Run mocked endpoint contracts and the OpenAI SDK test                       |
+| `deno task test:coverage` | Collect profiles under `coverage/` and print a local coverage report        |
+| `deno task build`         | Build the Fresh production bundle under `_fresh/`                           |
+| `deno task deploy:build`  | Frozen-install dependencies, then build for Deno Deploy                     |
+| `deno task start`         | Serve an existing production bundle on port `8000`                          |
+| `deno task smoke`         | Run the opt-in in-process/Agnes diagnostic smoke suite                      |
+| `deno task smoke:preview` | Strictly exercise a deployed `GATEWAY_URL`; any compatibility warning fails |
 
 Normal tests use an injected mock upstream. They require no network access or
-real API key. The GitHub Actions workflow runs frozen installation, formatting,
-linting, type checks, 25 automated tests, the Fresh build, and a Docker build.
+real API key. The GitHub Actions workflow runs frozen installation, whitespace,
+formatting, linting and type checks, the automated suite, the Fresh build, and a
+Docker build.
 
-The live smoke task creates real image and video jobs and may incur usage. It is
-never run by CI. Follow the credential-safe procedure in the
+Both smoke tasks create real image and video jobs and may incur usage. They are
+never run by CI. The preview task sends the checklist through the deployed
+gateway and is the release gate; the local task is diagnostic. Follow the
+credential-safe procedure in the
 [deployment guide](docs/DEPLOYMENT.md#manual-smoke-checklist).
 
 ### Repository layout
@@ -434,13 +475,15 @@ never run by CI. Follow the credential-safe procedure in the
 | `scripts/live_smoke.ts`       | Opt-in real-Agnes smoke runner                                            |
 | `docs/IMPLEMENTATION_PLAN.md` | Milestones, decisions, acceptance matrix, and live findings               |
 | `docs/DEPLOYMENT.md`          | Deno Deploy, Docker, proxy, smoke, and rollback guidance                  |
+| `CONTRIBUTING.md`             | Human contributor workflow and pull-request expectations                  |
+| `SECURITY.md`                 | Private vulnerability-reporting and sensitive-data guidance               |
 | `main.ts`                     | Production Fresh entrypoint                                               |
 
 ## Project status and roadmap
 
 The MVP implementation, including stateless video download, is complete. The
-automated suite contains 25 tests, and the full real-Agnes smoke checklist was
-completed on 2026-07-10 with a temporary caller-owned key.
+full real-Agnes smoke checklist was completed locally on 2026-07-10 with a
+temporary caller-owned key.
 
 Before `v0.1.0`, the remaining release gates are:
 
@@ -454,11 +497,12 @@ behavior are tracked in the
 ## Contributing
 
 Contributions that preserve the focused, stateless compatibility scope are
-welcome.
+welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md); automation agents and
+maintainers should also read [`AGENTS.md`](AGENTS.md).
 
 1. Open an issue before a substantial API or architecture change.
-2. Read [`AGENTS.md`](AGENTS.md) for project invariants, coding standards,
-   security rules, and testing requirements.
+2. Follow the security-reporting path in [`SECURITY.md`](SECURITY.md) instead of
+   disclosing vulnerabilities in public issues.
 3. Keep changes focused, add or update contract tests, and document public
    behavior.
 4. Run `deno task check`, `deno task test`, `deno task build`, and
