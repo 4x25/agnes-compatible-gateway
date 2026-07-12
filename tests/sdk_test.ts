@@ -12,6 +12,7 @@ function upstreamJson(body: unknown): Response {
 
 Deno.test("OpenAI JavaScript SDK calls the supported chat, image, and video subset", async () => {
   const upstreamCalls: Request[] = [];
+  let imageSequence = 0;
   const upstreamFetch = ((
     input: RequestInfo | URL,
     init?: RequestInit,
@@ -34,9 +35,10 @@ Deno.test("OpenAI JavaScript SDK calls the supported chat, image, and video subs
       }));
     }
     if (path.endsWith("/images/generations")) {
+      imageSequence++;
       return Promise.resolve(upstreamJson({
         created: 2,
-        data: [{ url: "https://images.test/sdk.png" }],
+        data: [{ url: `https://images.test/sdk-${imageSequence}.png` }],
       }));
     }
     if (path.endsWith("/videos")) {
@@ -84,8 +86,12 @@ Deno.test("OpenAI JavaScript SDK calls the supported chat, image, and video subs
     prompt: "a test image",
     size: "1024x1024",
     response_format: "url",
+    n: 2,
   });
-  assertEquals(image.data?.[0].url, "https://images.test/sdk.png");
+  assertEquals(image.data?.map((item) => item.url), [
+    "https://images.test/sdk-1.png",
+    "https://images.test/sdk-2.png",
+  ]);
 
   const video = await client.videos.create({
     model: "agnes-video-request",
@@ -97,12 +103,20 @@ Deno.test("OpenAI JavaScript SDK calls the supported chat, image, and video subs
   assertEquals(video.id, "video_sdk");
   assertEquals(video.model, "agnes-video-response");
 
-  assertEquals(upstreamCalls.length, 3);
+  assertEquals(upstreamCalls.length, 4);
   for (const request of upstreamCalls) {
     assertEquals(request.headers.get("authorization"), "Bearer sdk-user-key");
     assertEquals(request.headers.get("content-type"), "application/json");
   }
-  assertObjectMatch(await upstreamCalls[2].json(), {
+  for (const request of upstreamCalls.slice(1, 3)) {
+    assertObjectMatch(await request.json(), {
+      model: "agnes-image-request",
+      prompt: "a test image",
+      size: "1024x1024",
+      extra_body: { response_format: "url" },
+    });
+  }
+  assertObjectMatch(await upstreamCalls[3].json(), {
     model: "agnes-video-request",
     prompt: "a test video",
     frame_rate: 24,

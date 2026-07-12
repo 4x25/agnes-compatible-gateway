@@ -1,5 +1,6 @@
 import { App, type Context, HttpError, type Middleware } from "fresh";
 import {
+  clientCancelledError,
   invalidParameter,
   jsonResponse,
   missingParameter,
@@ -12,11 +13,13 @@ import {
   buildImageEditRequest,
   buildImageGenerationRequest,
   buildVideoRequest,
+  type BuiltImageGenerationRequest,
   IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES,
   parseJsonBody,
   parseVideoBody,
   transformCreatedVideo,
   transformRetrievedVideo,
+  transformSingleImageGenerationResponse,
   videoFailureMessage,
 } from "./transforms.ts";
 import {
@@ -26,10 +29,12 @@ import {
   parseHttpUrlWithoutUserinfo,
   passthroughResponse,
   readJsonObject,
+  readJsonObjectWithLimit,
   requestUpstream,
 } from "./upstream.ts";
 
 export { DEFAULT_AGNES_BASE_URL } from "./upstream.ts";
+export const IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES = 64 * 1024 * 1024;
 
 export interface GatewayAppOptions {
   agnesBaseUrl?: string | URL;
@@ -89,6 +94,20 @@ function jsonRequestInit(
   };
 }
 
+function attachSafeUpstreamHeaders(
+  response: Response,
+  sourceHeaders: Headers,
+): Response {
+  const headers = safeResponseHeaders(sourceHeaders);
+  const contentType = response.headers.get("content-type");
+  if (contentType !== null) headers.set("content-type", contentType);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 async function successfulResponseOrError(
   runtime: GatewayRuntime,
   url: URL,
@@ -126,8 +145,78 @@ async function handleChat(
       stream,
     ),
   );
-  if (!response.ok) return await normalizeUpstreamError(response);
+  if (!response.ok) {
+    return await normalizeUpstreamError(response, ctx.req.signal);
+  }
   return passthroughResponse(response, { eventStream: stream });
+}
+
+async function executeImageGenerationRequest(
+  runtime: GatewayRuntime,
+  authorization: string,
+  request: BuiltImageGenerationRequest,
+  signal: AbortSignal,
+): Promise<Response> {
+  const requestImage = () =>
+    successfulResponseOrError(
+      runtime,
+      runtime.urls.api("images/generations"),
+      jsonRequestInit(
+        authorization,
+        request.body,
+        signal,
+      ),
+    );
+
+  if (request.count === 1) {
+    const response = await requestImage();
+    if (!response.ok) {
+      return await normalizeUpstreamError(response, signal);
+    }
+    return passthroughResponse(response);
+  }
+
+  const data: Record<string, unknown>[] = [];
+  let created: number | undefined;
+  let lastResponse: Response | undefined;
+  let remainingBytes = IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES;
+
+  for (let index = 0; index < request.count; index++) {
+    if (signal.aborted) return clientCancelledError();
+
+    const response = await requestImage();
+    if (!response.ok) {
+      return await normalizeUpstreamError(response, signal);
+    }
+    const upstream = await readJsonObjectWithLimit(response, remainingBytes);
+    if (signal.aborted) return clientCancelledError();
+    if (upstream instanceof Response) return upstream;
+    remainingBytes -= upstream.byteLength;
+    const image = transformSingleImageGenerationResponse(
+      upstream.value,
+      request.outputField,
+    );
+    if ("error" in image) {
+      return attachSafeUpstreamHeaders(image.error, response.headers);
+    }
+
+    created ??= image.value.created;
+    data.push(image.value.image);
+    lastResponse = response;
+  }
+
+  if (created === undefined || lastResponse === undefined) {
+    return openAIError(500, "An internal gateway error occurred.", {
+      type: "api_error",
+      code: "internal_error",
+    });
+  }
+
+  return jsonResponse(
+    { created, data },
+    200,
+    lastResponse.headers,
+  );
 }
 
 async function handleImageGeneration(
@@ -139,14 +228,12 @@ async function handleImageGeneration(
   if ("error" in parsed) return parsed.error;
   const transformed = buildImageGenerationRequest(parsed.value);
   if ("error" in transformed) return transformed.error;
-
-  const response = await successfulResponseOrError(
+  return await executeImageGenerationRequest(
     runtime,
-    runtime.urls.api("images/generations"),
-    jsonRequestInit(authorization, transformed.value, ctx.req.signal),
+    authorization,
+    transformed.value,
+    ctx.req.signal,
   );
-  if (!response.ok) return await normalizeUpstreamError(response);
-  return passthroughResponse(response);
 }
 
 async function handleImageEdit(
@@ -167,7 +254,9 @@ async function handleImageEdit(
     runtime.urls.api("images/generations"),
     jsonRequestInit(authorization, transformed.value, ctx.req.signal),
   );
-  if (!response.ok) return await normalizeUpstreamError(response);
+  if (!response.ok) {
+    return await normalizeUpstreamError(response, ctx.req.signal);
+  }
   return passthroughResponse(response);
 }
 
@@ -186,7 +275,9 @@ async function handleVideoCreate(
     runtime.urls.api("videos"),
     jsonRequestInit(authorization, transformed.value.body, ctx.req.signal),
   );
-  if (!response.ok) return await normalizeUpstreamError(response);
+  if (!response.ok) {
+    return await normalizeUpstreamError(response, ctx.req.signal);
+  }
 
   const upstream = await readJsonObject(response);
   if (upstream instanceof Response) return upstream;
@@ -229,7 +320,9 @@ async function getVideoUpstream(
     runtime.urls.videoStatus(id),
     videoGetInit(authorization, ctx.req.signal),
   );
-  if (!response.ok) return await normalizeUpstreamError(response);
+  if (!response.ok) {
+    return await normalizeUpstreamError(response, ctx.req.signal);
+  }
   const body = await readJsonObject(response);
   return body instanceof Response ? body : { body, response };
 }

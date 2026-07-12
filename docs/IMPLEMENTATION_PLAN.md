@@ -1,6 +1,6 @@
 # Agnes Compatible Gateway MVP implementation plan
 
-Last updated: 2026-07-11\
+Last updated: 2026-07-12\
 Specification snapshot: Agnes and OpenAI documentation as of 2026-07-10\
 Target release: `v0.1.0`
 
@@ -30,7 +30,7 @@ Full OpenAI compatibility is intentionally not claimed:
 | Public endpoint                    | Accepted input                                        | Agnes mapping                                                          | Success output                         |
 | ---------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------- |
 | `POST /v1/chat/completions`        | JSON; `model`, non-empty `messages`                   | Whitelisted chat fields; optional `max_completion_tokens → max_tokens` | Agnes JSON/SSE body streamed unchanged |
-| `POST /v1/images/generations`      | JSON; `model`, `prompt`, `size`                       | `b64_json` sets both Agnes Base64 flags; otherwise URL format          | Agnes OpenAI-style image response      |
+| `POST /v1/images/generations`      | JSON; `model`, `prompt`, `size`; optional `n=1..10`   | Base64 flags; sequential single-image calls for `n > 1`                | Aggregated OpenAI ImagesResponse       |
 | `POST /v1/images/edits`            | JSON; `model`, `prompt`, `size`, URL/Data URI `image` | Calls `/images/generations` with `extra_body.image`                    | OpenAI ImagesResponse subset           |
 | `POST /v1/videos`                  | JSON or multipart; `model`, `prompt`                  | URL reference, seconds/frame and size/dimension conversion             | Agnes `video_id` becomes `id`          |
 | `GET /v1/videos/:video_id`         | Authorized path request                               | `GET ../agnesapi?video_id=...`                                         | OpenAI Video subset                    |
@@ -55,6 +55,24 @@ Global rules:
 - Client cancellation propagates to the Agnes request.
 - The service has no persistent state, task map, database, cache, billing, user
   authentication, or rate limiter.
+
+Image-count decisions:
+
+- Missing or `null` `n` and `n=1` make one Agnes call. Other integers from 2
+  through 10 make that many intentional calls sequentially; the gateway never
+  forwards `n`, and these calls are not retries.
+- Every call forwards the caller's arbitrary model unchanged and must return a
+  valid `created` plus exactly one image. The aggregate keeps the first
+  `created`, merges `data` in call order, and preserves safe headers from the
+  last successful response.
+- The first non-2xx, network failure, cancellation, or malformed success stops
+  the sequence. The gateway returns no partial response and performs no retry;
+  successful earlier creations cannot be rolled back.
+- Fan-out increases upstream calls, potential cost, latency, and memory use,
+  especially for Base64 output.
+- Fan-out buffers at most 64 MiB of combined successful Agnes JSON bodies.
+  Exceeding the limit returns 502, stops future calls, and yields no partial
+  response; single-image success bodies remain streamed through.
 
 Video mapping decisions:
 
@@ -121,9 +139,12 @@ pass.
 - [x] Implement `POST /v1/images/generations`.
 - [x] Implement deterministic URL/Base64 output mapping.
 - [x] Preserve `created/data/url/b64_json/revised_prompt` responses.
+- [x] Validate `n=1..10` and sequentially aggregate one Agnes creation per
+      requested image without retries or partial results.
 - [x] Ignore unmapped generation options.
 
-Exit gate: URL, Base64, validation, filtering, and error tests pass.
+Exit gate: URL, Base64, count fan-out, aggregation, validation, filtering, and
+error tests pass.
 
 ### M5 — JSON image edits
 
@@ -167,8 +188,8 @@ Exit gate: create ID can be polled and downloaded without gateway state.
       through `GATEWAY_URL`.
 - [x] Document Deno, Deno Deploy, Docker, all endpoints, limitations, and
       security behavior.
-- [x] Run the complete real Agnes API smoke checklist through the gateway with a
-      caller-owned temporary key.
+- [x] Run the then-current 2026-07-10 real Agnes API smoke checklist through the
+      gateway with a caller-owned temporary key. This predates the count check.
 - [ ] Repeat the smoke checklist against the final Deno Deploy preview revision.
 - [ ] Publish and tag `v0.1.0`, retaining the previous deploy/image for
       rollback.
@@ -188,10 +209,11 @@ Every supported endpoint must retain tests for:
 5. Agnes errors become an OpenAI envelope while retaining HTTP status.
 
 Cross-cutting coverage includes arbitrary model pass-through, parameter
-filtering, safe headers, URL/Base64 image formats, 4/8/12-second frame mapping,
-stateless video IDs, SSE chunk fidelity, cancellation, safe redirects, malformed
-upstream bodies, request-size enforcement, URL/userinfo rejection, network
-failures, preview-smoke helpers, and an actual OpenAI JavaScript SDK client.
+filtering, safe headers, URL/Base64 image formats, image-count validation and
+sequential aggregation, 4/8/12-second frame mapping, stateless video IDs, SSE
+chunk fidelity, cancellation, safe redirects, malformed upstream bodies,
+request-size enforcement, URL/userinfo rejection, network failures,
+preview-smoke helpers, and an actual OpenAI JavaScript SDK client.
 
 CI tests use only an injected mock transport and never require an external
 service or secret. A live smoke test is intentionally manual so a user key is
@@ -224,6 +246,28 @@ Transient Agnes capacity/rate-limit failures were observed during the run and
 succeeded after manual, non-automatic retry. This confirms why the gateway must
 not automatically retry creation requests.
 
+## Live Agnes image-count verification — 2026-07-12
+
+One authorized, side-effectful native Agnes probe requested `n=2` with URL
+output. Agnes returned a 2xx response, but the response did not contain exactly
+two non-empty URL results. The probe was not retried automatically, and no
+credential, response body, or asset URL was recorded in the repository.
+
+This result did not establish usable native `n` support. Production therefore
+uses a fixed sequential fan-out for `n > 1` instead of forwarding `n`, probing
+per request, or falling back after an ambiguous response. Each fan-out call is
+an intentional creation and may be billable.
+
+After the fan-out implementation and mocked contracts passed, one separately
+authorized count-only smoke request completed with HTTP 200 and exactly two URL
+results from two sequential Agnes calls. This verified the aggregate behavior
+without logging either generated asset URL. The second check validated the new
+fan-out path; it was not a retry of the native capability probe.
+
+The complete smoke suite was updated to require `n=2` after that focused check,
+but the updated complete suite has not been rerun. Its mandatory run against the
+final deployed preview remains pending.
+
 ## Decision log
 
 - 2026-07-10: Approved an OpenAI-compatible subset rather than a complete API.
@@ -245,6 +289,11 @@ not automatically retry creation requests.
   development hosts and rejected URL userinfo.
 - 2026-07-11: Distinguished the in-process diagnostic smoke from the strict
   `GATEWAY_URL` preview release gate; preview warnings now fail the run.
+- 2026-07-12: A native Agnes `n=2` request returned 2xx without two URL results,
+  so the gateway implements image counts with static sequential single-image
+  fan-out, fail-fast aggregation, no partial results, and no retries.
+- 2026-07-12: Limited buffered multi-image success bodies to 64 MiB, leaving
+  runtime headroom under Deno Deploy's documented 512 MB application maximum.
 
 ## Source documents
 
@@ -253,3 +302,4 @@ not automatically retry creation requests.
 - Agnes video: <https://agnes-ai.com/zh-Hans/docs/agnes-video-v20.md>
 - Agnes common errors: <https://wiki.agnes-ai.com/en/docs/code.md>
 - OpenAI API reference: <https://developers.openai.com/api/reference/>
+- Deno Deploy limits: <https://docs.deno.com/deploy/pricing_and_limits/>

@@ -4,11 +4,15 @@ import {
   assertMatch,
   assertObjectMatch,
 } from "@std/assert";
-import { createGatewayApp } from "../gateway/app.ts";
+import {
+  createGatewayApp,
+  IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES,
+} from "../gateway/app.ts";
 import {
   IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES,
   STANDARD_REQUEST_BODY_LIMIT_BYTES,
 } from "../gateway/transforms.ts";
+import { readJsonObjectWithLimit } from "../gateway/upstream.ts";
 
 const GATEWAY_ORIGIN = "https://gateway.test";
 const AGNES_BASE_URL = "https://agnes.test/proxy/v1/";
@@ -396,7 +400,6 @@ Deno.test("image generation maps URL and Base64 formats", async () => {
       model: "custom-image-model",
       prompt: "a lighthouse",
       size: "1024x768",
-      n: 4,
       quality: "high",
     }),
   );
@@ -424,6 +427,520 @@ Deno.test("image generation maps URL and Base64 formats", async () => {
     return_base64: true,
     extra_body: { response_format: "b64_json" },
   });
+});
+
+Deno.test("n=1 keeps the single-call image response passthrough", async () => {
+  const exactBody =
+    '{"created":1,"data":[{"url":"https://images.test/out.png"}]}';
+  const gateway = createTestGateway(() =>
+    new Response(exactBody, {
+      status: 201,
+      headers: {
+        "content-type": "application/vnd.agnes-image+json",
+        "x-request-id": "single-request",
+      },
+    })
+  );
+
+  const response = await gateway.request(
+    "/v1/images/generations",
+    postJson({ model: "m", prompt: "p", size: "1x1", n: 1 }),
+  );
+
+  assertEquals(response.status, 201);
+  assertEquals(
+    response.headers.get("content-type"),
+    "application/vnd.agnes-image+json",
+  );
+  assertEquals(response.headers.get("x-request-id"), "single-request");
+  assertEquals(await response.text(), exactBody);
+  assertEquals(gateway.calls.length, 1);
+  assertEquals(await gateway.calls[0].json(), {
+    model: "m",
+    prompt: "p",
+    size: "1x1",
+    extra_body: { response_format: "url" },
+  });
+});
+
+Deno.test("image generation fans out sequentially and aggregates URL results", async () => {
+  let sequence = 0;
+  const gateway = createTestGateway(() => {
+    sequence++;
+    return json(
+      {
+        created: 100 + sequence,
+        data: [{ url: `https://images.test/out-${sequence}.png` }],
+      },
+      200,
+      {
+        "x-request-id": `request-${sequence}`,
+        "x-ratelimit-remaining-images": String(10 - sequence),
+      },
+    );
+  });
+
+  const response = await gateway.request(
+    "/v1/images/generations",
+    postJson({
+      model: "unlisted-image-model",
+      prompt: "a lighthouse",
+      size: "1024x768",
+      n: 4,
+      quality: "high",
+    }),
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals(await responseJson(response), {
+    created: 101,
+    data: [
+      { url: "https://images.test/out-1.png" },
+      { url: "https://images.test/out-2.png" },
+      { url: "https://images.test/out-3.png" },
+      { url: "https://images.test/out-4.png" },
+    ],
+  });
+  assertEquals(response.headers.get("x-request-id"), "request-4");
+  assertEquals(response.headers.get("x-ratelimit-remaining-images"), "6");
+  assertEquals(gateway.calls.length, 4);
+  for (const request of gateway.calls) {
+    assertEquals(await request.json(), {
+      model: "unlisted-image-model",
+      prompt: "a lighthouse",
+      size: "1024x768",
+      extra_body: { response_format: "url" },
+    });
+  }
+});
+
+Deno.test("image generation does not start the next fan-out call early", async () => {
+  const firstResponse = Promise.withResolvers<Response>();
+  const firstStarted = Promise.withResolvers<void>();
+  let sequence = 0;
+  const gateway = createTestGateway(() => {
+    sequence++;
+    if (sequence === 1) {
+      firstStarted.resolve();
+      return firstResponse.promise;
+    }
+    return json({
+      created: 2,
+      data: [{ url: "https://images.test/two.png" }],
+    });
+  });
+
+  const pending = gateway.request(
+    "/v1/images/generations",
+    postJson({ model: "m", prompt: "p", size: "1x1", n: 2 }),
+  );
+  await firstStarted.promise;
+  assertEquals(gateway.calls.length, 1);
+
+  firstResponse.resolve(
+    json({
+      created: 1,
+      data: [{ url: "https://images.test/one.png" }],
+    }),
+  );
+  const response = await pending;
+  assertEquals(response.status, 200);
+  assertEquals(gateway.calls.length, 2);
+});
+
+Deno.test("image generation fans out Base64 results with the Agnes flags", async () => {
+  let sequence = 0;
+  const gateway = createTestGateway(() => {
+    sequence++;
+    return json({
+      created: sequence,
+      data: [{ b64_json: `encoded-${sequence}`, revised_prompt: null }],
+    });
+  });
+
+  const response = await gateway.request(
+    "/v1/images/generations",
+    postJson({
+      model: "m",
+      prompt: "p",
+      size: "1x1",
+      response_format: "b64_json",
+      n: 2,
+    }),
+  );
+
+  assertEquals(await responseJson(response), {
+    created: 1,
+    data: [
+      { b64_json: "encoded-1", revised_prompt: null },
+      { b64_json: "encoded-2", revised_prompt: null },
+    ],
+  });
+  assertEquals(gateway.calls.length, 2);
+  for (const request of gateway.calls) {
+    assertEquals(await request.json(), {
+      model: "m",
+      prompt: "p",
+      size: "1x1",
+      return_base64: true,
+      extra_body: { response_format: "b64_json" },
+    });
+  }
+});
+
+Deno.test("image generation accepts count boundaries and treats null as omitted", async () => {
+  let sequence = 0;
+  const gateway = createTestGateway(() =>
+    json({
+      created: ++sequence,
+      data: [{ url: `https://images.test/out-${sequence}.png` }],
+    })
+  );
+  const cases: Array<[Record<string, unknown>, number]> = [
+    [{ n: 1 }, 1],
+    [{ n: 10 }, 10],
+    [{}, 1],
+    [{ n: null }, 1],
+  ];
+
+  for (const [extra, expectedCalls] of cases) {
+    const callsBefore = gateway.calls.length;
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", ...extra }),
+    );
+    assertEquals(response.status, 200);
+    assertEquals(gateway.calls.length - callsBefore, expectedCalls);
+    const body = await responseJson(response);
+    assertEquals((body.data as unknown[]).length, expectedCalls);
+  }
+  assertEquals(gateway.calls.length, 13);
+  for (const request of gateway.calls) {
+    const body = await request.json() as Record<string, unknown>;
+    assertEquals(body.n, undefined);
+  }
+});
+
+Deno.test("image generation rejects invalid counts before calling Agnes", async () => {
+  const gateway = createTestGateway(() => {
+    throw new Error("upstream must not be called");
+  });
+  const invalidCounts: unknown[] = ["2", true, 1.5, 0, 11];
+
+  for (const n of invalidCounts) {
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", n }),
+    );
+    assertEquals(response.status, 400, JSON.stringify(n));
+    assertObjectMatch(await responseJson(response), {
+      error: {
+        type: "invalid_request_error",
+        param: "n",
+        code: "invalid_parameter",
+      },
+    });
+  }
+  assertEquals(gateway.calls.length, 0);
+});
+
+Deno.test("image generation fan-out fails fast without returning partial results", async (t) => {
+  await t.step("Agnes error", async () => {
+    let sequence = 0;
+    const gateway = createTestGateway(() => {
+      sequence++;
+      if (sequence === 1) {
+        return json({
+          created: 1,
+          data: [{ url: "https://images.test/one.png" }],
+        });
+      }
+      return json(
+        { error: { message: "Rate limit reached", code: "rate_limited" } },
+        429,
+        { "retry-after": "9" },
+      );
+    });
+
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
+    );
+    assertEquals(response.status, 429);
+    assertEquals(response.headers.get("retry-after"), "9");
+    assertObjectMatch(await responseJson(response), {
+      error: { message: "Rate limit reached", code: "rate_limited" },
+    });
+    assertEquals(gateway.calls.length, 2);
+  });
+
+  await t.step("network error", async () => {
+    let sequence = 0;
+    const gateway = createTestGateway(() => {
+      sequence++;
+      if (sequence === 1) {
+        return json({
+          created: 1,
+          data: [{ url: "https://images.test/one.png" }],
+        });
+      }
+      throw new TypeError("network details");
+    });
+
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
+    );
+    assertEquals(response.status, 502);
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "upstream_connection_error" },
+    });
+    assertEquals(gateway.calls.length, 2);
+  });
+
+  await t.step("malformed second success", async () => {
+    let sequence = 0;
+    const gateway = createTestGateway(() => {
+      sequence++;
+      return sequence === 1
+        ? json({
+          created: 1,
+          data: [{ url: "https://images.test/one.png" }],
+        })
+        : json(
+          { created: 2, data: [] },
+          200,
+          { "x-request-id": "malformed-second" },
+        );
+    });
+
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
+    );
+    assertEquals(response.status, 502);
+    assertEquals(response.headers.get("x-request-id"), "malformed-second");
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "invalid_upstream_response" },
+    });
+    assertEquals(gateway.calls.length, 2);
+  });
+
+  await t.step("aggregate response limit", async () => {
+    let sequence = 0;
+    const gateway = createTestGateway(() => {
+      sequence++;
+      if (sequence === 1) {
+        return json({
+          created: 1,
+          data: [{ url: "https://images.test/one.png" }],
+        });
+      }
+      return new Response("{}", {
+        headers: {
+          "content-length": String(
+            IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES + 1,
+          ),
+          "content-type": "application/json",
+          "x-request-id": "oversized-second",
+        },
+      });
+    });
+
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
+    );
+    assertEquals(response.status, 502);
+    assertEquals(response.headers.get("x-request-id"), "oversized-second");
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "invalid_upstream_response" },
+    });
+    assertEquals(gateway.calls.length, 2);
+  });
+});
+
+Deno.test("limited JSON reader rejects streamed overages", async () => {
+  const encoded = new TextEncoder().encode('{"value":true}');
+  const result = await readJsonObjectWithLimit(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoded.subarray(0, 5));
+          controller.enqueue(encoded.subarray(5));
+          controller.close();
+        },
+      }),
+      {
+        headers: { "x-ratelimit-remaining-images": "4" },
+      },
+    ),
+    encoded.byteLength - 1,
+  );
+  assert(result instanceof Response);
+  assertEquals(result.status, 502);
+  assertEquals(result.headers.get("x-ratelimit-remaining-images"), "4");
+  assertObjectMatch(await responseJson(result), {
+    error: { code: "invalid_upstream_response" },
+  });
+});
+
+Deno.test("image generation fan-out rejects malformed single-image successes", async () => {
+  const malformedBodies: unknown[] = [
+    { data: [{ url: "https://images.test/out.png" }] },
+    { created: -1, data: [{ url: "https://images.test/out.png" }] },
+    { created: 1.5, data: [{ url: "https://images.test/out.png" }] },
+    { created: 1, data: [] },
+    { created: 1, data: [{ url: "one" }, { url: "two" }] },
+    { created: 1, data: ["not-an-object"] },
+    { created: 1, data: [{}] },
+    { created: 1, data: [{ url: "" }] },
+    { created: 1, data: [{ b64_json: "wrong-output-format" }] },
+  ];
+
+  for (const body of malformedBodies) {
+    const gateway = createTestGateway(() =>
+      json(body, 200, {
+        "set-cookie": "secret=value",
+        "x-request-id": "malformed-image",
+      })
+    );
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size: "1x1", n: 2 }),
+    );
+    assertEquals(response.status, 502, JSON.stringify(body));
+    assertObjectMatch(await responseJson(response), {
+      error: { code: "invalid_upstream_response" },
+    });
+    assertEquals(response.headers.get("x-request-id"), "malformed-image");
+    assertEquals(response.headers.get("set-cookie"), null);
+    assertEquals(gateway.calls.length, 1);
+  }
+
+  const invalidJsonGateway = createTestGateway(() =>
+    new Response("not json", {
+      headers: {
+        "content-type": "text/plain",
+        "x-ratelimit-remaining-images": "3",
+      },
+    })
+  );
+  const invalidJsonResponse = await invalidJsonGateway.request(
+    "/v1/images/generations",
+    postJson({ model: "m", prompt: "p", size: "1x1", n: 2 }),
+  );
+  assertEquals(invalidJsonResponse.status, 502);
+  assertEquals(
+    invalidJsonResponse.headers.get("x-ratelimit-remaining-images"),
+    "3",
+  );
+
+  const wrongBase64Gateway = createTestGateway(() =>
+    json({
+      created: 1,
+      data: [{ url: "https://images.test/wrong-format.png" }],
+    })
+  );
+  const wrongBase64Response = await wrongBase64Gateway.request(
+    "/v1/images/generations",
+    postJson({
+      model: "m",
+      prompt: "p",
+      size: "1x1",
+      response_format: "b64_json",
+      n: 2,
+    }),
+  );
+  assertEquals(wrongBase64Response.status, 502);
+  assertEquals(wrongBase64Gateway.calls.length, 1);
+});
+
+Deno.test("client cancellation stops image fan-out before the next call", async () => {
+  const controller = new AbortController();
+  const gateway = createTestGateway(() => {
+    controller.abort();
+    return json({ created: 1, data: [{ url: "https://images.test/one.png" }] });
+  });
+
+  const response = await gateway.request(
+    "/v1/images/generations",
+    {
+      ...postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
+      signal: controller.signal,
+    },
+  );
+  assertEquals(response.status, 499);
+  assertObjectMatch(await responseJson(response), {
+    error: { code: "client_aborted" },
+  });
+  assertEquals(gateway.calls.length, 1);
+});
+
+Deno.test("client cancellation while reading an Agnes error stops image fan-out", async () => {
+  const controller = new AbortController();
+  const gateway = createTestGateway(() =>
+    new Response(
+      new ReadableStream({
+        pull(streamController) {
+          controller.abort();
+          streamController.error(new DOMException("cancelled", "AbortError"));
+        },
+      }),
+      { status: 429, headers: { "content-type": "application/json" } },
+    )
+  );
+
+  const response = await gateway.request(
+    "/v1/images/generations",
+    {
+      ...postJson({ model: "m", prompt: "p", size: "1x1", n: 2 }),
+      signal: controller.signal,
+    },
+  );
+  assertEquals(response.status, 499);
+  assertObjectMatch(await responseJson(response), {
+    error: { code: "client_aborted", type: "api_connection_error" },
+  });
+  assertEquals(gateway.calls.length, 1);
+});
+
+Deno.test("client cancellation while reading the second success stops image fan-out", async () => {
+  const controller = new AbortController();
+  let sequence = 0;
+  const gateway = createTestGateway(() => {
+    sequence++;
+    if (sequence === 1) {
+      return json({
+        created: 1,
+        data: [{ url: "https://images.test/one.png" }],
+      });
+    }
+    return new Response(
+      new ReadableStream({
+        pull(streamController) {
+          controller.abort();
+          streamController.error(new DOMException("cancelled", "AbortError"));
+        },
+      }),
+      {
+        headers: { "content-type": "application/json" },
+      },
+    );
+  });
+
+  const response = await gateway.request(
+    "/v1/images/generations",
+    {
+      ...postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
+      signal: controller.signal,
+    },
+  );
+  assertEquals(response.status, 499);
+  assertObjectMatch(await responseJson(response), {
+    error: { code: "client_aborted", type: "api_connection_error" },
+  });
+  assertEquals(gateway.calls.length, 2);
 });
 
 Deno.test("image edits normalize URL and Data URI inputs into Agnes extra_body", async () => {

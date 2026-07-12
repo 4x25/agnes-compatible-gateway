@@ -36,6 +36,8 @@ Preserve these invariants in every change:
   safe request/rate-limit headers.
 - Enforce fixed request-body limits before parsing: 1 MiB for ordinary
   JSON/video multipart and 20 MiB for JSON image edits.
+- Limit the combined Agnes JSON success bodies buffered for image-count fan-out
+  to 64 MiB. Return 502 and stop before another call when the limit is exceeded.
 - Require HTTPS for Agnes upstreams except explicit loopback HTTP development
   hosts. Never accept URL userinfo in upstream or media URLs.
 
@@ -91,6 +93,14 @@ Important compatibility details:
 - URL image generation uses `extra_body.response_format=url`. Current Agnes
   runtime behavior requires Base64 generation to send both `return_base64=true`
   and `extra_body.response_format=b64_json`.
+- Image generation accepts `n` as omitted, `null`, or an integer from 1 through
+  10. Omitted, `null`, and 1 make one Agnes call. For larger values, make that
+  many intentional calls sequentially without forwarding `n`; these calls are
+  not retries. Preserve the arbitrary request model on every call, require one
+  image per success, and merge `data` in order with the first valid `created`.
+  Stop on the first error, cancellation, or malformed success and return no
+  partial data. Never retry the failed call. Single-image successes remain
+  streamed through; multi-image aggregation has a fixed 64 MiB response limit.
 - Image edits call Agnes `/images/generations`, validate HTTP(S) URLs without
   userinfo or `image/*` Data URIs, normalize `image` to an array, and place it
   under `extra_body.image`. Do not fetch or decode input images in the gateway.
@@ -166,10 +176,10 @@ For every endpoint, cover at least:
 
 Add focused coverage for SSE chunk fidelity and `[DONE]`, client cancellation,
 parameter filtering, model pass-through, body-size enforcement, multipart
-parsing, Base64 flags, URL/userinfo rejection, stateless video polling,
-scheme-restricted redirects, malformed upstream responses, and representative
-401/404/413/429/5xx errors. Update the SDK contract test when a public wire
-shape changes.
+parsing, Base64 flags, fan-out response-size enforcement, URL/userinfo
+rejection, stateless video polling, scheme-restricted redirects, malformed
+upstream responses, and representative 401/404/413/429/5xx errors. Update the
+SDK contract test when a public wire shape changes.
 
 Before handing off a change, run:
 

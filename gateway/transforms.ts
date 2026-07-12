@@ -25,6 +25,17 @@ export interface BuiltVideoRequest {
   prompt: string;
 }
 
+export interface BuiltImageGenerationRequest {
+  body: Record<string, unknown>;
+  count: number;
+  outputField: "url" | "b64_json";
+}
+
+export interface SingleImageGenerationResult {
+  created: number;
+  image: Record<string, unknown>;
+}
+
 function requestBodyTooLarge(maxBytes: number): Response {
   return openAIError(
     413,
@@ -175,7 +186,7 @@ export function buildChatRequest(
 
 export function buildImageGenerationRequest(
   input: Record<string, unknown>,
-): BuildResult<Record<string, unknown>> {
+): BuildResult<BuiltImageGenerationRequest> {
   const model = requiredString(input, "model");
   if ("error" in model) return model;
   const prompt = requiredString(input, "prompt");
@@ -189,14 +200,63 @@ export function buildImageGenerationRequest(
     size: size.value,
   };
 
-  if (input.response_format === "b64_json") {
+  let count = 1;
+  if (input.n !== undefined && input.n !== null) {
+    if (
+      typeof input.n !== "number" || !Number.isInteger(input.n) ||
+      input.n < 1 || input.n > 10
+    ) {
+      return { error: invalidParameter("n", "an integer between 1 and 10") };
+    }
+    count = input.n;
+  }
+
+  const outputField = input.response_format === "b64_json" ? "b64_json" : "url";
+  if (outputField === "b64_json") {
     body.return_base64 = true;
     body.extra_body = { response_format: "b64_json" };
   } else {
     body.extra_body = { response_format: "url" };
   }
 
-  return { value: body };
+  return { value: { body, count, outputField } };
+}
+
+export function transformSingleImageGenerationResponse(
+  input: Record<string, unknown>,
+  outputField: "url" | "b64_json",
+): BuildResult<SingleImageGenerationResult> {
+  if (
+    !finiteNumber(input.created) || !Number.isSafeInteger(input.created) ||
+    input.created < 0
+  ) {
+    return {
+      error: invalidUpstreamResponse(
+        "Agnes image response is missing a valid 'created'.",
+      ),
+    };
+  }
+  const image = Array.isArray(input.data) && input.data.length === 1 &&
+      isRecord(input.data[0])
+    ? input.data[0]
+    : undefined;
+  if (
+    image === undefined ||
+    typeof image[outputField] !== "string" || image[outputField].length === 0
+  ) {
+    return {
+      error: invalidUpstreamResponse(
+        "Agnes single-image response must contain exactly one image result.",
+      ),
+    };
+  }
+
+  return {
+    value: {
+      created: input.created,
+      image,
+    },
+  };
 }
 
 function normalizeImages(value: unknown): BuildResult<string[]> {

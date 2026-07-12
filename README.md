@@ -48,7 +48,7 @@ forwards its value unchanged and lets Agnes validate the credential.
 | Method | Endpoint                       | Required input                                 | Compatibility behavior                                                           |
 | ------ | ------------------------------ | ---------------------------------------------- | -------------------------------------------------------------------------------- |
 | `POST` | `/v1/chat/completions`         | JSON: `model` and a non-empty `messages` array | Non-streaming JSON and streaming SSE; successful Agnes bodies are passed through |
-| `POST` | `/v1/images/generations`       | JSON: `model`, `prompt`, and `size`            | URL output by default; `response_format=b64_json` is supported                   |
+| `POST` | `/v1/images/generations`       | JSON: `model`, `prompt`, and `size`            | URL/Base64 output; optional `n=1..10` uses one or sequential Agnes calls         |
 | `POST` | `/v1/images/edits`             | JSON: `model`, `prompt`, `size`, and `image`   | `image` is a URL/Data URI string or array; multipart edits are not supported     |
 | `POST` | `/v1/videos`                   | JSON or multipart: `model` and `prompt`        | Supports text-to-video and HTTP(S) reference-image URLs without userinfo         |
 | `GET`  | `/v1/videos/:video_id`         | A non-empty video ID                           | Stateless Agnes status lookup returned as an OpenAI Video subset                 |
@@ -261,16 +261,34 @@ Use `"response_format": "b64_json"` for Base64 output.
 
 #### Image generation request parameters
 
-| Category    | Parameter                                                                                                            | Accepted input                    | Gateway behavior                                                                                                                                                                      |
-| ----------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Required    | `model`                                                                                                              | Non-empty string                  | Forwarded unchanged. The gateway does not map, alias, default, or validate it against a model list.                                                                                   |
-| Required    | `prompt`                                                                                                             | Non-empty string                  | Forwarded unchanged.                                                                                                                                                                  |
-| Required    | `size`                                                                                                               | Non-empty string                  | Forwarded unchanged. The gateway does not validate the dimension syntax or range.                                                                                                     |
-| Optional    | `response_format`                                                                                                    | Omitted, `"url"`, or `"b64_json"` | Only the exact string `"b64_json"` selects Base64 output. Omission, `"url"`, and every other value use URL output.                                                                    |
-| Ignored     | `n`, `quality`, `background`, `moderation`, `output_compression`, `output_format`, `partial_images`, `style`, `user` | Any value                         | Silently omitted and not sent to Agnes.                                                                                                                                               |
-| Unsupported | `stream`                                                                                                             | Omit or set to `false`            | OpenAI supports it for GPT Image models, but this gateway does not. Do not set it to `true`: the gateway returns non-streaming JSON, and an SDK may try to parse the response as SSE. |
-| Ignored     | `ratio`, client-supplied `return_base64`, and client-supplied `extra_body`                                           | Any value                         | Silently omitted and not sent to Agnes. The gateway derives its Base64 fields from `response_format`.                                                                                 |
-| Ignored     | Any other top-level parameter                                                                                        | Any value                         | Silently omitted and not sent to Agnes.                                                                                                                                               |
+| Category    | Parameter                                                                                                       | Accepted input                     | Gateway behavior                                                                                                                                                                      |
+| ----------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required    | `model`                                                                                                         | Non-empty string                   | Forwarded unchanged. The gateway does not map, alias, default, or validate it against a model list.                                                                                   |
+| Required    | `prompt`                                                                                                        | Non-empty string                   | Forwarded unchanged.                                                                                                                                                                  |
+| Required    | `size`                                                                                                          | Non-empty string                   | Forwarded unchanged. The gateway does not validate the dimension syntax or range.                                                                                                     |
+| Optional    | `response_format`                                                                                               | Omitted, `"url"`, or `"b64_json"`  | Only the exact string `"b64_json"` selects Base64 output. Omission, `"url"`, and every other value use URL output.                                                                    |
+| Optional    | `n`                                                                                                             | Omitted, `null`, or integer `1–10` | Omission, `null`, and `1` make one Agnes call. Values above `1` make that many sequential calls. Any other value returns a local `400` with `param: "n"` before Agnes is called.      |
+| Ignored     | `quality`, `background`, `moderation`, `output_compression`, `output_format`, `partial_images`, `style`, `user` | Any value                          | Silently omitted and not sent to Agnes.                                                                                                                                               |
+| Unsupported | `stream`                                                                                                        | Omit or set to `false`             | OpenAI supports it for GPT Image models, but this gateway does not. Do not set it to `true`: the gateway returns non-streaming JSON, and an SDK may try to parse the response as SSE. |
+| Ignored     | `ratio`, client-supplied `return_base64`, and client-supplied `extra_body`                                      | Any value                          | Silently omitted and not sent to Agnes. The gateway derives its Base64 fields from `response_format`.                                                                                 |
+| Ignored     | Any other top-level parameter                                                                                   | Any value                          | Silently omitted and not sent to Agnes.                                                                                                                                               |
+
+For `n > 1`, the gateway deliberately sends `n` independent creation requests to
+Agnes in sequence; these calls are not retries, and `n` itself is not sent
+upstream. The caller's arbitrary model name and the other mapped fields are
+forwarded unchanged on every call. Each upstream success must contain a valid
+`created` value and exactly one image. The gateway returns the first response's
+`created` value and merges the image records in call order.
+
+If any call fails, is cancelled, or returns a malformed success, the gateway
+stops before issuing the remaining calls and returns the error for the whole
+request without partial image data or an automatic retry. Previously completed
+calls cannot be undone. A larger `n` therefore increases upstream calls,
+potential cost, end-to-end latency, and memory use while results are collected;
+Base64 output has the largest memory impact. For `n > 1`, the combined Agnes
+success bodies are limited to 64 MiB. Exceeding that limit returns a `502`,
+stops the sequence, and returns no partial image data. Single-image successes
+remain streamed through without this aggregation limit.
 
 A non-empty `Authorization` header is also required and forwarded unchanged; it
 is not a JSON body parameter. The request must use a JSON content type and must
@@ -392,7 +410,8 @@ Agnes/Fresh environment variables.
   buffer traffic and must be configured separately.
 - **Image generation:** URL output is the default. Current Agnes runtime
   behavior requires two upstream flags for `b64_json`, which the gateway sets
-  automatically.
+  automatically. Image counts above one use the documented sequential fan-out
+  because a live Agnes `n=2` probe did not return two URL results.
 - **Image edits:** only JSON HTTP(S) URLs without userinfo and `image/*` Data
   URIs are supported. Multipart files, masks, and `file_id` inputs are outside
   the MVP. Inputs are neither fetched nor decoded by the gateway.

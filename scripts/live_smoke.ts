@@ -1,4 +1,5 @@
 import { isRecord } from "../gateway/errors.ts";
+import { parseHttpUrlWithoutUserinfo } from "../gateway/upstream.ts";
 
 const CHAT_MODEL = "agnes-2.0-flash";
 const IMAGE_MODEL = "agnes-image-2.1-flash";
@@ -101,6 +102,18 @@ export function hasOpenAIErrorEnvelope(value: unknown): boolean {
     (code === null || typeof code === "string");
 }
 
+export function hasExactImageUrlResults(
+  value: unknown,
+  expectedCount: number,
+): boolean {
+  return isRecord(value) && Array.isArray(value.data) &&
+    value.data.length === expectedCount &&
+    value.data.every((item) =>
+      isRecord(item) && typeof item.url === "string" &&
+      parseHttpUrlWithoutUserinfo(item.url) !== undefined
+    );
+}
+
 export function enforcePreviewWarnings(
   previewMode: boolean,
   warningCount: number,
@@ -163,6 +176,7 @@ async function main(): Promise<void> {
   const previewMode = Deno.args.includes("--preview");
   const base64Only = Deno.args.includes("--base64-only");
   const editOnly = Deno.args.includes("--edit-only");
+  const imageCountOnly = Deno.args.includes("--image-count-only");
   const contentOnlyArgument = Deno.args.find((value) =>
     value.startsWith("--content-id=")
   );
@@ -225,6 +239,28 @@ async function main(): Promise<void> {
       true,
       timeoutMs,
     );
+
+  if (imageCountOnly) {
+    const response = await post("/v1/images/generations", {
+      model: IMAGE_MODEL,
+      prompt: "A tiny blue circle on a plain white background",
+      size: "512x512",
+      response_format: "url",
+      n: 2,
+    });
+    const body = await jsonValue(response);
+    check(
+      response.ok,
+      `Image count check failed: ${responseStatusSummary(response, body)}.`,
+    );
+    check(
+      hasExactImageUrlResults(body, 2),
+      "Image count response must contain exactly two safe HTTP(S) URL results.",
+    );
+    console.log(`PASS image count generation (HTTP ${response.status})`);
+    console.log("SMOKE_RESULT=PASS");
+    return;
+  }
 
   if (base64Only) {
     const response = await post("/v1/images/generations", {
@@ -362,6 +398,7 @@ async function main(): Promise<void> {
       prompt: "A simple blue glass sphere on a clean white studio background",
       size: "1024x768",
       response_format: "url",
+      n: 2,
     });
     const imageUrlBody = await jsonValue(imageUrlResponse);
     check(
@@ -370,8 +407,12 @@ async function main(): Promise<void> {
         responseStatusSummary(imageUrlResponse, imageUrlBody)
       }.`,
     );
+    check(
+      hasExactImageUrlResults(imageUrlBody, 2),
+      "URL image response must contain exactly two safe HTTP(S) results.",
+    );
     imageUrl = firstImageValue(imageUrlBody, "url");
-    console.log("PASS URL image generation");
+    console.log("PASS URL image count generation");
 
     if (!generatedVideoOnly) {
       const imageBase64Response = await post("/v1/images/generations", {

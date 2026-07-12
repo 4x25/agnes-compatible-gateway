@@ -89,7 +89,14 @@ previous image tag for rollback. Do not use only `latest` in production.
 - Do not add request-header or request-body logging at the proxy layer.
 - Disable proxy buffering for `/v1/chat/completions` so SSE chunks are delivered
   promptly.
-- Allow image-generation requests to run for up to several minutes.
+- Allow several minutes for each Agnes image-generation call. Because `n > 1`
+  runs calls sequentially, size client, platform, and proxy timeouts for the
+  requested count (up to roughly ten times the single-image allowance). A
+  timeout can occur after earlier images were already created and billed.
+- Multi-image generation buffers at most 64 MiB of aggregate Agnes success JSON.
+  Keep additional runtime headroom below the platform memory limit, especially
+  for Base64 output. Deno Deploy currently documents a 512 MB application
+  maximum.
 - Permit 302 responses and external `Location` headers from video content
   requests. Do not forward caller authorization to the redirect target.
 - Apply route-specific request limits no higher than 1 MiB for ordinary
@@ -159,6 +166,37 @@ preview tasks retain selective flags such as `--base64-only`, `--edit-only`,
 `--content-id=...` recovery is also available; treat task IDs as sensitive and
 do not paste them into issues or logs. Selective checks do not replace a final
 complete strict preview pass.
+
+Use `--image-count-only` to verify `n: 2` image-generation compatibility with
+one URL-output request. The check requires exactly two syntactically valid
+HTTP(S) URLs without userinfo and prints only a PASS/status summary, never
+response bodies or asset URLs:
+
+```bash
+read -rsp "Temporary Agnes API key: " AGNES_API_KEY
+echo
+printf '%s\n' "$AGNES_API_KEY" | deno task smoke --image-count-only
+unset AGNES_API_KEY
+```
+
+To perform the same focused check through a deployment, use the complete
+pipeline so both `GATEWAY_URL` and the stdin key reach the task:
+
+```bash
+GATEWAY_URL=https://your-preview.example
+read -rsp "Temporary Agnes API key: " AGNES_API_KEY
+echo
+printf '%s\n' "$AGNES_API_KEY" |
+  GATEWAY_URL="$GATEWAY_URL" deno task smoke:preview --image-count-only
+unset AGNES_API_KEY GATEWAY_URL
+```
+
+This call creates two billable images; do not retry it automatically after an
+ambiguous timeout or upstream failure.
+
+The complete `deno task smoke:preview` gate also requests `n: 2` during its URL
+image-generation step and fails unless exactly two URL results are returned. The
+focused flag is for diagnosis and does not replace that final complete run.
 
 After testing, revoke the disposable key and clean up generated Agnes assets or
 tasks when the upstream supports cleanup.

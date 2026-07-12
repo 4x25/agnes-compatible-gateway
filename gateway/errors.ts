@@ -81,6 +81,13 @@ export function openAIError(
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+export function clientCancelledError(): Response {
+  return openAIError(499, "The client cancelled the request.", {
+    type: "api_connection_error",
+    code: "client_aborted",
+  });
+}
+
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -98,8 +105,18 @@ function safePlainText(text: string): string | undefined {
 
 export async function normalizeUpstreamError(
   response: Response,
+  signal?: AbortSignal,
 ): Promise<Response> {
-  const text = await response.text();
+  if (signal?.aborted) return clientCancelledError();
+
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    if (signal?.aborted) return clientCancelledError();
+  }
+  if (signal?.aborted) return clientCancelledError();
+
   let parsed: unknown;
 
   if (text.length > 0) {
@@ -157,9 +174,15 @@ export function invalidParameter(param: string, expected: string): Response {
   });
 }
 
-export function invalidUpstreamResponse(message: string): Response {
+export function invalidUpstreamResponse(
+  message: string,
+  sourceHeaders?: Headers,
+): Response {
   return openAIError(502, message, {
     type: "api_error",
     code: "invalid_upstream_response",
+    headers: sourceHeaders === undefined
+      ? undefined
+      : safeResponseHeaders(sourceHeaders),
   });
 }

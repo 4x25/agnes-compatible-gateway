@@ -2,6 +2,7 @@ import { assertEquals, assertThrows } from "@std/assert";
 import {
   enforcePreviewWarnings,
   gatewayRequestUrl,
+  hasExactImageUrlResults,
   hasOpenAIErrorEnvelope,
   parseGatewayBaseUrl,
   responseStatusSummary,
@@ -97,6 +98,47 @@ Deno.test("smoke authentication checks require a complete OpenAI error envelope"
     hasOpenAIErrorEnvelope({ error: { message: "Incomplete" } }),
     false,
   );
+});
+
+Deno.test("image count smoke requires the exact number of safe HTTP(S) URL results", () => {
+  assertEquals(
+    hasExactImageUrlResults({
+      data: [
+        { url: "https://assets.example/first.png" },
+        { url: "https://assets.example/second.png" },
+      ],
+    }, 2),
+    true,
+  );
+  assertEquals(
+    hasExactImageUrlResults({
+      data: [{ url: "https://assets.example/only.png" }],
+    }, 2),
+    false,
+  );
+  assertEquals(
+    hasExactImageUrlResults({ data: [{ url: "" }, { b64_json: "value" }] }, 2),
+    false,
+  );
+  for (
+    const url of [
+      "not a URL",
+      "javascript:alert(1)",
+      "ftp://assets.example/image.png",
+      "https://user:secret@assets.example/image.png",
+      "https://@assets.example/image.png",
+      "   ",
+    ]
+  ) {
+    assertEquals(
+      hasExactImageUrlResults({
+        data: [{ url }, { url: "https://assets.example/valid.png" }],
+      }, 2),
+      false,
+      url,
+    );
+  }
+  assertEquals(hasExactImageUrlResults({ data: "not-an-array" }, 2), false);
 });
 
 Deno.test("preview warnings are strict while local warnings remain diagnostic", () => {
