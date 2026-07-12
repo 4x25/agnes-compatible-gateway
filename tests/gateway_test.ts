@@ -95,11 +95,15 @@ Deno.test("POST endpoints validate their required fields", async () => {
     ["/v1/chat/completions", { model: "m" }, "messages"],
     ["/v1/images/generations", { prompt: "p", size: "1x1" }, "model"],
     ["/v1/images/generations", { model: "m", size: "1x1" }, "prompt"],
-    ["/v1/images/generations", { model: "m", prompt: "p" }, "size"],
     [
       "/v1/images/edits",
       { model: "m", prompt: "p", size: "1x1" },
       "image",
+    ],
+    [
+      "/v1/images/edits",
+      { model: "m", prompt: "p", image: "https://images.test/in.png" },
+      "size",
     ],
     ["/v1/videos", { prompt: "p" }, "model"],
     ["/v1/videos", { model: "m" }, "prompt"],
@@ -423,6 +427,66 @@ Deno.test("image generation maps URL and Base64 formats", async () => {
     return_base64: true,
     extra_body: { response_format: "b64_json" },
   });
+});
+
+Deno.test("image generation normalizes omitted, null, and exact auto sizes", async () => {
+  let sequence = 0;
+  const gateway = createTestGateway(() =>
+    json({
+      created: ++sequence,
+      data: [{ url: `https://images.test/out-${sequence}.png` }],
+    })
+  );
+  const cases: Array<
+    [Record<string, unknown>, string, number]
+  > = [
+    [{}, "2048x2048", 1],
+    [{ size: null }, "2048x2048", 1],
+    [{ size: "auto", n: 2 }, "2048x2048", 2],
+    [{ size: "AUTO" }, "AUTO", 1],
+    [{ size: " auto " }, " auto ", 1],
+  ];
+
+  for (const [extra, expectedSize, expectedCalls] of cases) {
+    const callsBefore = gateway.calls.length;
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", ...extra }),
+    );
+    assertEquals(response.status, 200);
+    assertEquals(gateway.calls.length - callsBefore, expectedCalls);
+    for (const request of gateway.calls.slice(callsBefore)) {
+      assertEquals(await request.json(), {
+        model: "m",
+        prompt: "p",
+        size: expectedSize,
+        extra_body: { response_format: "url" },
+      });
+    }
+  }
+});
+
+Deno.test("image generation rejects invalid size values", async () => {
+  const gateway = createTestGateway(() => {
+    throw new Error("upstream must not be called");
+  });
+  const invalidSizes: unknown[] = ["", " ", 2048, true, [], {}];
+
+  for (const size of invalidSizes) {
+    const response = await gateway.request(
+      "/v1/images/generations",
+      postJson({ model: "m", prompt: "p", size }),
+    );
+    assertEquals(response.status, 400, JSON.stringify(size));
+    assertObjectMatch(await responseJson(response), {
+      error: {
+        type: "invalid_request_error",
+        param: "size",
+        code: "invalid_parameter",
+      },
+    });
+  }
+  assertEquals(gateway.calls.length, 0);
 });
 
 Deno.test("n=1 keeps the single-call image response passthrough", async () => {
@@ -920,6 +984,23 @@ Deno.test("image edits normalize URL and Data URI inputs into Agnes extra_body",
     }),
   );
   assertObjectMatch(await gateway.calls[1].json(), {
+    extra_body: {
+      image: ["https://images.test/single.png"],
+      response_format: "url",
+    },
+  });
+
+  await gateway.request(
+    "/v1/images/edits",
+    postJson({
+      model: "edit-model",
+      prompt: "edit",
+      size: "auto",
+      image: "https://images.test/single.png",
+    }),
+  );
+  assertObjectMatch(await gateway.calls[2].json(), {
+    size: "auto",
     extra_body: {
       image: ["https://images.test/single.png"],
       response_format: "url",

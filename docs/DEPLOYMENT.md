@@ -149,7 +149,7 @@ The checklist covers:
 
 - local rejection of missing `Authorization`;
 - non-streaming and streaming chat, including `[DONE]`;
-- URL and Base64 image generation;
+- URL and Base64 image generation, including automatic-size normalization;
 - JSON URL image editing;
 - URL image-to-video creation, polling, and content redirect;
 - OpenAI error normalization for an intentionally invalid credential; and
@@ -161,11 +161,26 @@ payloads, asset URLs, or video IDs. It uses manual redirect handling so caller
 authorization is never forwarded to an asset host.
 
 For deliberate recovery after a transient upstream failure, the local and
-preview tasks retain selective flags such as `--base64-only`, `--edit-only`,
-`--media-only`, `--video-only`, and `--generated-video-only`. A
-`--content-id=...` recovery is also available; treat task IDs as sensitive and
-do not paste them into issues or logs. Selective checks do not replace a final
-complete strict preview pass.
+preview tasks retain selective flags such as `--image-auto-only`,
+`--base64-only`, `--edit-only`, `--media-only`, `--video-only`, and
+`--generated-video-only`. A `--content-id=...` recovery is also available; treat
+task IDs as sensitive and do not paste them into issues or logs. Selective
+checks do not replace a final complete strict preview pass.
+
+Use `--image-auto-only` to submit OpenAI `size: "auto"` through the gateway and
+require exactly one safe URL result. The gateway normalizes the request to the
+fixed Agnes size `"2048x2048"` without printing the response body or asset URL:
+
+```bash
+read -rsp "Temporary Agnes API key: " AGNES_API_KEY
+echo
+printf '%s\n' "$AGNES_API_KEY" | deno task smoke --image-auto-only
+unset AGNES_API_KEY
+```
+
+This focused check creates one potentially billable image. Do not retry it
+automatically after an ambiguous timeout or upstream failure, and do not use it
+as a substitute for the complete strict preview gate.
 
 Use `--image-count-only` to verify `n: 2` image-generation compatibility with
 one URL-output request. The check requires exactly two syntactically valid
@@ -194,9 +209,10 @@ unset AGNES_API_KEY GATEWAY_URL
 This call creates two billable images; do not retry it automatically after an
 ambiguous timeout or upstream failure.
 
-The complete `deno task smoke:preview` gate also requests `n: 2` during its URL
-image-generation step and fails unless exactly two URL results are returned. The
-focused flag is for diagnosis and does not replace that final complete run.
+The complete `deno task smoke:preview` gate also requests `size: "auto"` with
+`n: 2` during its URL image-generation step. It fails unless the deployed
+gateway normalizes the size and returns exactly two URL results. The focused
+flag is for diagnosis and does not replace that final complete run.
 
 After testing, revoke the disposable key and clean up generated Agnes assets or
 tasks when the upstream supports cleanup.

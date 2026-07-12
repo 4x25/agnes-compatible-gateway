@@ -11,6 +11,7 @@ export type BuildResult<T> = { value: T } | { error: Response };
 
 export const STANDARD_REQUEST_BODY_LIMIT_BYTES = 1024 * 1024;
 export const IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES = 20 * 1024 * 1024;
+const DEFAULT_IMAGE_GENERATION_SIZE = "2048x2048";
 
 export interface VideoRequestInput {
   model?: unknown;
@@ -142,6 +143,15 @@ function requiredString(
   return { value };
 }
 
+function imageGenerationSize(
+  body: Record<string, unknown>,
+): BuildResult<string> {
+  if (!("size" in body) || body.size === null || body.size === "auto") {
+    return { value: DEFAULT_IMAGE_GENERATION_SIZE };
+  }
+  return requiredString(body, "size");
+}
+
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -191,7 +201,7 @@ export function buildImageGenerationRequest(
   if ("error" in model) return model;
   const prompt = requiredString(input, "prompt");
   if ("error" in prompt) return prompt;
-  const size = requiredString(input, "size");
+  const size = imageGenerationSize(input);
   if ("error" in size) return size;
 
   const body: Record<string, unknown> = {

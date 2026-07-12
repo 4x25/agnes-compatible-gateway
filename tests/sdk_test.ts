@@ -84,7 +84,7 @@ Deno.test("OpenAI JavaScript SDK calls the supported chat, image, and video subs
   const image = await client.images.generate({
     model: "agnes-image-request",
     prompt: "a test image",
-    size: "1024x1024",
+    size: null,
     response_format: "url",
     n: 2,
   });
@@ -112,7 +112,7 @@ Deno.test("OpenAI JavaScript SDK calls the supported chat, image, and video subs
     assertObjectMatch(await request.json(), {
       model: "agnes-image-request",
       prompt: "a test image",
-      size: "1024x1024",
+      size: "2048x2048",
       extra_body: { response_format: "url" },
     });
   }

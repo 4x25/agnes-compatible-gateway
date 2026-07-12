@@ -1,7 +1,7 @@
 # Agnes Compatible Gateway MVP implementation plan
 
 Last updated: 2026-07-12\
-Specification snapshot: Agnes and OpenAI documentation as of 2026-07-10\
+Specification snapshot: Agnes and OpenAI documentation as of 2026-07-12\
 Target release: `v0.1.0`
 
 Status legend: `[x]` implemented and verified locally; `[ ]` pending an external
@@ -30,7 +30,7 @@ Full OpenAI compatibility is intentionally not claimed:
 | Public endpoint                    | Accepted input                                        | Agnes mapping                                                          | Success output                         |
 | ---------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------- |
 | `POST /v1/chat/completions`        | JSON; `model`, non-empty `messages`                   | Whitelisted chat fields; optional `max_completion_tokens → max_tokens` | Agnes JSON/SSE body streamed unchanged |
-| `POST /v1/images/generations`      | JSON; `model`, `prompt`, `size`; optional `n=1..10`   | Base64 flags; sequential single-image calls for `n > 1`                | Aggregated OpenAI ImagesResponse       |
+| `POST /v1/images/generations`      | JSON; `model`, `prompt`; optional `size`, `n=1..10`   | Omitted/`null`/`auto` size maps to `2048x2048`; Base64/count mapping   | Aggregated OpenAI ImagesResponse       |
 | `POST /v1/images/edits`            | JSON; `model`, `prompt`, `size`, URL/Data URI `image` | Calls `/images/generations` with `extra_body.image`                    | OpenAI ImagesResponse subset           |
 | `POST /v1/videos`                  | JSON or multipart; `model`, `prompt`                  | URL reference, seconds/frame and size/dimension conversion             | Agnes `video_id` becomes `id`          |
 | `GET /v1/videos/:video_id`         | Authorized path request                               | `GET ../agnesapi?video_id=...`                                         | OpenAI Video subset                    |
@@ -55,6 +55,17 @@ Global rules:
 - Client cancellation propagates to the Agnes request.
 - The service has no persistent state, task map, database, cache, billing, user
   authentication, or rate limiter.
+
+Image-size decisions:
+
+- Missing or `null` `size`, or the exact string `auto`, maps to the fixed Agnes
+  size `2048x2048`. This is a square compatibility fallback and does not infer
+  an aspect ratio from the prompt.
+- Every other non-blank string is forwarded unchanged. Empty or whitespace-only
+  strings and non-string values return a local 400.
+- The mapping applies only to image generation. Image edits still require an
+  explicit size and forward non-blank strings, including `auto`, unchanged. The
+  unsupported `ratio` parameter remains omitted.
 
 Image-count decisions:
 
@@ -139,6 +150,8 @@ pass.
 
 - [x] Implement `POST /v1/images/generations`.
 - [x] Implement deterministic URL/Base64 output mapping.
+- [x] Normalize omitted, `null`, or exact `auto` generation sizes to the fixed
+      `2048x2048` Agnes size.
 - [x] Preserve `created/data/url/b64_json/revised_prompt` responses.
 - [x] Validate `n=1..10` and sequentially aggregate one Agnes creation per
       requested image without retries or partial results.
@@ -210,11 +223,12 @@ Every supported endpoint must retain tests for:
 5. Agnes errors become an OpenAI envelope while retaining HTTP status.
 
 Cross-cutting coverage includes arbitrary model pass-through, parameter
-filtering, safe headers, URL/Base64 image formats, image-count validation and
-sequential aggregation, 4/8/12-second frame mapping, stateless video IDs, SSE
-chunk fidelity, cancellation, safe redirects, malformed upstream bodies,
-request-size enforcement, URL/userinfo rejection, network failures,
-preview-smoke helpers, and an actual OpenAI JavaScript SDK client.
+filtering, safe headers, URL/Base64 image formats, omitted/automatic image-size
+normalization, image-count validation and sequential aggregation, 4/8/12-second
+frame mapping, stateless video IDs, SSE chunk fidelity, cancellation, safe
+redirects, malformed upstream bodies, request-size enforcement, URL/userinfo
+rejection, network failures, preview-smoke helpers, and an actual OpenAI
+JavaScript SDK client.
 
 CI tests use only an injected mock transport and never require an external
 service or secret. A live smoke test is intentionally manual so a user key is
@@ -265,9 +279,17 @@ results from two sequential Agnes calls. This verified the aggregate behavior
 without logging either generated asset URL. The second check validated the new
 fan-out path; it was not a retry of the native capability probe.
 
-The complete smoke suite was updated to require `n=2` after that focused check,
-but the updated complete suite has not been rerun. Its mandatory run against the
-final deployed preview remains pending.
+The complete smoke suite was updated to require `size=auto` with `n=2` after
+those focused checks, but the updated complete suite has not been rerun. Its
+mandatory run against the final deployed preview remains pending.
+
+One separately authorized auto-size probe sent `size=auto` through the
+pre-normalization gateway and received Agnes HTTP 422 with safe error code 422.
+The call was not retried. After the gateway mapped the same client value to
+`2048x2048`, one follow-up probe completed with HTTP 200 and exactly one safe
+URL result. Neither run logged the generated asset URL. This verifies the
+compatibility path but does not independently inspect the returned image's pixel
+dimensions.
 
 ## Decision log
 
@@ -296,6 +318,9 @@ final deployed preview remains pending.
 - 2026-07-12: Multi-image aggregation has no gateway-defined response byte cap;
   deployments must provision memory for the requested count, especially for
   Base64 output with `n=10`.
+- 2026-07-12: Mapped omitted, `null`, or exact `auto` image-generation sizes to
+  the fixed `2048x2048` Agnes size request. The fallback does not infer an
+  aspect ratio from the prompt and does not apply to image edits.
 
 ## Source documents
 

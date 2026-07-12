@@ -176,6 +176,7 @@ async function main(): Promise<void> {
   const previewMode = Deno.args.includes("--preview");
   const base64Only = Deno.args.includes("--base64-only");
   const editOnly = Deno.args.includes("--edit-only");
+  const imageAutoOnly = Deno.args.includes("--image-auto-only");
   const imageCountOnly = Deno.args.includes("--image-count-only");
   const contentOnlyArgument = Deno.args.find((value) =>
     value.startsWith("--content-id=")
@@ -239,6 +240,27 @@ async function main(): Promise<void> {
       true,
       timeoutMs,
     );
+
+  if (imageAutoOnly) {
+    const response = await post("/v1/images/generations", {
+      model: IMAGE_MODEL,
+      prompt: "A tiny green circle on a plain white background",
+      size: "auto",
+      response_format: "url",
+    });
+    const body = await jsonValue(response);
+    check(
+      response.ok,
+      `Image auto-size check failed: ${responseStatusSummary(response, body)}.`,
+    );
+    check(
+      hasExactImageUrlResults(body, 1),
+      "Image auto-size response must contain exactly one safe HTTP(S) URL result.",
+    );
+    console.log(`PASS image auto-size generation (HTTP ${response.status})`);
+    console.log("SMOKE_RESULT=PASS");
+    return;
+  }
 
   if (imageCountOnly) {
     const response = await post("/v1/images/generations", {
@@ -396,7 +418,7 @@ async function main(): Promise<void> {
     const imageUrlResponse = await post("/v1/images/generations", {
       model: IMAGE_MODEL,
       prompt: "A simple blue glass sphere on a clean white studio background",
-      size: "1024x768",
+      size: "auto",
       response_format: "url",
       n: 2,
     });
@@ -412,7 +434,7 @@ async function main(): Promise<void> {
       "URL image response must contain exactly two safe HTTP(S) results.",
     );
     imageUrl = firstImageValue(imageUrlBody, "url");
-    console.log("PASS URL image count generation");
+    console.log("PASS URL image count and auto-size generation");
 
     if (!generatedVideoOnly) {
       const imageBase64Response = await post("/v1/images/generations", {
