@@ -259,6 +259,23 @@ gateway_curl "$GATEWAY_URL/v1/images/generations" \
 
 Use `"response_format": "b64_json"` for Base64 output.
 
+#### Image generation request parameters
+
+| Category    | Parameter                                                                                                            | Accepted input                    | Gateway behavior                                                                                                                                                                      |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required    | `model`                                                                                                              | Non-empty string                  | Forwarded unchanged. The gateway does not map, alias, default, or validate it against a model list.                                                                                   |
+| Required    | `prompt`                                                                                                             | Non-empty string                  | Forwarded unchanged.                                                                                                                                                                  |
+| Required    | `size`                                                                                                               | Non-empty string                  | Forwarded unchanged. The gateway does not validate the dimension syntax or range.                                                                                                     |
+| Optional    | `response_format`                                                                                                    | Omitted, `"url"`, or `"b64_json"` | Only the exact string `"b64_json"` selects Base64 output. Omission, `"url"`, and every other value use URL output.                                                                    |
+| Ignored     | `n`, `quality`, `background`, `moderation`, `output_compression`, `output_format`, `partial_images`, `style`, `user` | Any value                         | Silently omitted and not sent to Agnes.                                                                                                                                               |
+| Unsupported | `stream`                                                                                                             | Omit or set to `false`            | OpenAI supports it for GPT Image models, but this gateway does not. Do not set it to `true`: the gateway returns non-streaming JSON, and an SDK may try to parse the response as SSE. |
+| Ignored     | `ratio`, client-supplied `return_base64`, and client-supplied `extra_body`                                           | Any value                         | Silently omitted and not sent to Agnes. The gateway derives its Base64 fields from `response_format`.                                                                                 |
+| Ignored     | Any other top-level parameter                                                                                        | Any value                         | Silently omitted and not sent to Agnes.                                                                                                                                               |
+
+A non-empty `Authorization` header is also required and forwarded unchanged; it
+is not a JSON body parameter. The request must use a JSON content type and must
+not exceed the 1 MiB ordinary request-body limit.
+
 ### JSON image edit
 
 ```bash
