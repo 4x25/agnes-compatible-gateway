@@ -29,12 +29,10 @@ import {
   parseHttpUrlWithoutUserinfo,
   passthroughResponse,
   readJsonObject,
-  readJsonObjectWithLimit,
   requestUpstream,
 } from "./upstream.ts";
 
 export { DEFAULT_AGNES_BASE_URL } from "./upstream.ts";
-export const IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES = 64 * 1024 * 1024;
 
 export interface GatewayAppOptions {
   agnesBaseUrl?: string | URL;
@@ -179,7 +177,6 @@ async function executeImageGenerationRequest(
   const data: Record<string, unknown>[] = [];
   let created: number | undefined;
   let lastResponse: Response | undefined;
-  let remainingBytes = IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES;
 
   for (let index = 0; index < request.count; index++) {
     if (signal.aborted) return clientCancelledError();
@@ -188,12 +185,11 @@ async function executeImageGenerationRequest(
     if (!response.ok) {
       return await normalizeUpstreamError(response, signal);
     }
-    const upstream = await readJsonObjectWithLimit(response, remainingBytes);
+    const upstream = await readJsonObject(response);
     if (signal.aborted) return clientCancelledError();
     if (upstream instanceof Response) return upstream;
-    remainingBytes -= upstream.byteLength;
     const image = transformSingleImageGenerationResponse(
-      upstream.value,
+      upstream,
       request.outputField,
     );
     if ("error" in image) {

@@ -285,10 +285,10 @@ stops before issuing the remaining calls and returns the error for the whole
 request without partial image data or an automatic retry. Previously completed
 calls cannot be undone. A larger `n` therefore increases upstream calls,
 potential cost, end-to-end latency, and memory use while results are collected;
-Base64 output has the largest memory impact. For `n > 1`, the combined Agnes
-success bodies are limited to 64 MiB. Exceeding that limit returns a `502`,
-stops the sequence, and returns no partial image data. Single-image successes
-remain streamed through without this aggregation limit.
+Base64 output has the largest memory impact. The gateway does not impose a
+separate response byte cap on multi-image aggregation, so deployments must
+provision enough memory for the requested count, especially for Base64 output
+with `n=10`. Single-image successes remain streamed through.
 
 A non-empty `Authorization` header is also required and forwarded unchanged; it
 is not a JSON body parameter. The request must use a JSON content type and must

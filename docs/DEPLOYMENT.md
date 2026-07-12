@@ -93,10 +93,10 @@ previous image tag for rollback. Do not use only `latest` in production.
   runs calls sequentially, size client, platform, and proxy timeouts for the
   requested count (up to roughly ten times the single-image allowance). A
   timeout can occur after earlier images were already created and billed.
-- Multi-image generation buffers at most 64 MiB of aggregate Agnes success JSON.
-  Keep additional runtime headroom below the platform memory limit, especially
-  for Base64 output. Deno Deploy currently documents a 512 MB application
-  maximum.
+- Multi-image generation buffers successful Agnes JSON responses without a
+  gateway-defined response byte cap. Provision runtime memory for the requested
+  count and leave headroom below the platform limit, especially for Base64
+  output with `n=10`.
 - Permit 302 responses and external `Location` headers from video content
   requests. Do not forward caller authorization to the redirect target.
 - Apply route-specific request limits no higher than 1 MiB for ordinary

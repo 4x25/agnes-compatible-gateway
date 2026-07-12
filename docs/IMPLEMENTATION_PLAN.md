@@ -70,9 +70,10 @@ Image-count decisions:
   successful earlier creations cannot be rolled back.
 - Fan-out increases upstream calls, potential cost, latency, and memory use,
   especially for Base64 output.
-- Fan-out buffers at most 64 MiB of combined successful Agnes JSON bodies.
-  Exceeding the limit returns 502, stops future calls, and yields no partial
-  response; single-image success bodies remain streamed through.
+- Fan-out buffers successful Agnes JSON bodies without a gateway-defined
+  response byte cap. Deployments must provision memory for the requested count,
+  especially for Base64 output with `n=10`; single-image success bodies remain
+  streamed through.
 
 Video mapping decisions:
 
@@ -292,8 +293,9 @@ final deployed preview remains pending.
 - 2026-07-12: A native Agnes `n=2` request returned 2xx without two URL results,
   so the gateway implements image counts with static sequential single-image
   fan-out, fail-fast aggregation, no partial results, and no retries.
-- 2026-07-12: Limited buffered multi-image success bodies to 64 MiB, leaving
-  runtime headroom under Deno Deploy's documented 512 MB application maximum.
+- 2026-07-12: Multi-image aggregation has no gateway-defined response byte cap;
+  deployments must provision memory for the requested count, especially for
+  Base64 output with `n=10`.
 
 ## Source documents
 

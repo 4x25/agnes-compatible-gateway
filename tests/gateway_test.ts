@@ -4,15 +4,11 @@ import {
   assertMatch,
   assertObjectMatch,
 } from "@std/assert";
-import {
-  createGatewayApp,
-  IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES,
-} from "../gateway/app.ts";
+import { createGatewayApp } from "../gateway/app.ts";
 import {
   IMAGE_EDIT_REQUEST_BODY_LIMIT_BYTES,
   STANDARD_REQUEST_BODY_LIMIT_BYTES,
 } from "../gateway/transforms.ts";
-import { readJsonObjectWithLimit } from "../gateway/upstream.ts";
 
 const GATEWAY_ORIGIN = "https://gateway.test";
 const AGNES_BASE_URL = "https://agnes.test/proxy/v1/";
@@ -724,64 +720,6 @@ Deno.test("image generation fan-out fails fast without returning partial results
       error: { code: "invalid_upstream_response" },
     });
     assertEquals(gateway.calls.length, 2);
-  });
-
-  await t.step("aggregate response limit", async () => {
-    let sequence = 0;
-    const gateway = createTestGateway(() => {
-      sequence++;
-      if (sequence === 1) {
-        return json({
-          created: 1,
-          data: [{ url: "https://images.test/one.png" }],
-        });
-      }
-      return new Response("{}", {
-        headers: {
-          "content-length": String(
-            IMAGE_GENERATION_FANOUT_RESPONSE_LIMIT_BYTES + 1,
-          ),
-          "content-type": "application/json",
-          "x-request-id": "oversized-second",
-        },
-      });
-    });
-
-    const response = await gateway.request(
-      "/v1/images/generations",
-      postJson({ model: "m", prompt: "p", size: "1x1", n: 3 }),
-    );
-    assertEquals(response.status, 502);
-    assertEquals(response.headers.get("x-request-id"), "oversized-second");
-    assertObjectMatch(await responseJson(response), {
-      error: { code: "invalid_upstream_response" },
-    });
-    assertEquals(gateway.calls.length, 2);
-  });
-});
-
-Deno.test("limited JSON reader rejects streamed overages", async () => {
-  const encoded = new TextEncoder().encode('{"value":true}');
-  const result = await readJsonObjectWithLimit(
-    new Response(
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoded.subarray(0, 5));
-          controller.enqueue(encoded.subarray(5));
-          controller.close();
-        },
-      }),
-      {
-        headers: { "x-ratelimit-remaining-images": "4" },
-      },
-    ),
-    encoded.byteLength - 1,
-  );
-  assert(result instanceof Response);
-  assertEquals(result.status, 502);
-  assertEquals(result.headers.get("x-ratelimit-remaining-images"), "4");
-  assertObjectMatch(await responseJson(result), {
-    error: { code: "invalid_upstream_response" },
   });
 });
 

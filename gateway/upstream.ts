@@ -1,7 +1,6 @@
 import {
   clientCancelledError,
   invalidUpstreamResponse,
-  isRecord,
   openAIError,
   safeResponseHeaders,
 } from "./errors.ts";
@@ -17,11 +16,6 @@ export interface AgnesUrls {
 export interface UpstreamResult {
   response?: Response;
   error?: Response;
-}
-
-export interface LimitedJsonObject {
-  value: Record<string, unknown>;
-  byteLength: number;
 }
 
 function rawAuthorityHasUserinfo(value: string): boolean {
@@ -153,80 +147,6 @@ export async function readJsonObject(
   } catch {
     // The common error response below is deliberately independent of the
     // upstream payload so malformed HTML or binary data is never reflected.
-  }
-
-  return invalidUpstreamResponse(
-    "Agnes returned an invalid JSON response.",
-    response.headers,
-  );
-}
-
-export async function readJsonObjectWithLimit(
-  response: Response,
-  maxBytes: number,
-): Promise<LimitedJsonObject | Response> {
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
-    throw new TypeError("JSON response limit must be a non-negative integer.");
-  }
-
-  const tooLarge = () =>
-    invalidUpstreamResponse(
-      "Agnes JSON response exceeds the fan-out aggregation limit.",
-      response.headers,
-    );
-  const contentLength = response.headers.get("content-length");
-  if (
-    contentLength !== null && /^\d+$/.test(contentLength.trim()) &&
-    Number(contentLength) > maxBytes
-  ) {
-    if (response.body !== null) {
-      await response.body.cancel().catch(() => undefined);
-    }
-    return tooLarge();
-  }
-
-  const reader = response.body?.getReader();
-  if (reader === undefined) {
-    return invalidUpstreamResponse(
-      "Agnes returned an invalid JSON response.",
-      response.headers,
-    );
-  }
-
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  try {
-    while (true) {
-      const result = await reader.read();
-      if (result.done) break;
-      if (totalBytes + result.value.byteLength > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        return tooLarge();
-      }
-      chunks.push(result.value);
-      totalBytes += result.value.byteLength;
-    }
-  } catch {
-    return invalidUpstreamResponse(
-      "Agnes returned an invalid JSON response.",
-      response.headers,
-    );
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  try {
-    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
-    if (isRecord(value)) return { value, byteLength: totalBytes };
-  } catch {
-    // The common safe error below deliberately excludes the upstream payload.
   }
 
   return invalidUpstreamResponse(
