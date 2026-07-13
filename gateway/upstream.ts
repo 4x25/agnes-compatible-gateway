@@ -18,6 +18,20 @@ export interface UpstreamResult {
   error?: Response;
 }
 
+export interface GatewayLogger {
+  info(event: string, fields: Record<string, unknown>): void;
+  error(event: string, fields: Record<string, unknown>): void;
+}
+
+export const DEFAULT_GATEWAY_LOGGER: GatewayLogger = {
+  info(event, fields) {
+    console.info(JSON.stringify({ event, ...fields }));
+  },
+  error(event, fields) {
+    console.error(JSON.stringify({ event, ...fields }));
+  },
+};
+
 function rawAuthorityHasUserinfo(value: string): boolean {
   const match = /^[a-z][a-z\d+.-]*:\/\/([^/?#]*)/i.exec(value);
   return match?.[1].includes("@") ?? false;
@@ -99,10 +113,31 @@ export async function requestUpstream(
   fetcher: typeof fetch,
   url: URL,
   init: RequestInit,
+  logger: GatewayLogger = DEFAULT_GATEWAY_LOGGER,
 ): Promise<UpstreamResult> {
+  const startedAt = Date.now();
+  const method = init.method ?? "GET";
+  logger.info("agnes_request_started", {
+    method,
+    path: url.pathname,
+  });
   try {
-    return { response: await fetcher(url, init) };
-  } catch {
+    const response = await fetcher(url, init);
+    logger.info("agnes_request_finished", {
+      method,
+      path: url.pathname,
+      status: response.status,
+      duration_ms: Date.now() - startedAt,
+    });
+    return { response };
+  } catch (error) {
+    logger.error("agnes_request_failed", {
+      method,
+      path: url.pathname,
+      duration_ms: Date.now() - startedAt,
+      cancelled: init.signal?.aborted ?? false,
+      error: error instanceof Error ? error.name : "unknown_error",
+    });
     if (init.signal?.aborted) {
       return { error: clientCancelledError() };
     }

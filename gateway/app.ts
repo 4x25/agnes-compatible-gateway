@@ -30,6 +30,8 @@ import {
   passthroughResponse,
   readJsonObject,
   requestUpstream,
+  DEFAULT_GATEWAY_LOGGER,
+  type GatewayLogger,
 } from "./upstream.ts";
 
 export { DEFAULT_AGNES_BASE_URL } from "./upstream.ts";
@@ -38,12 +40,14 @@ export interface GatewayAppOptions {
   agnesBaseUrl?: string | URL;
   fetch?: typeof globalThis.fetch;
   now?: () => number;
+  logger?: GatewayLogger;
 }
 
 interface GatewayRuntime {
   fetch: typeof globalThis.fetch;
   now: () => number;
   urls: AgnesUrls;
+  logger: GatewayLogger;
 }
 
 interface VideoUpstreamResult {
@@ -56,6 +60,18 @@ type AuthorizedHandler = (
   ctx: Context<GatewayState>,
   authorization: string,
 ) => Response | Promise<Response>;
+
+function logPath(pathname: string): string {
+  if (pathname === "/v1/videos" || pathname === "/v1/videos/") {
+    return "/v1/videos";
+  }
+  if (pathname.startsWith("/v1/videos/")) {
+    return pathname.endsWith("/content")
+      ? "/v1/videos/:video_id/content"
+      : "/v1/videos/:video_id";
+  }
+  return pathname;
+}
 
 function withAuthorization(
   handler: AuthorizedHandler,
@@ -111,7 +127,7 @@ async function successfulResponseOrError(
   url: URL,
   init: RequestInit,
 ): Promise<Response> {
-  const result = await requestUpstream(runtime.fetch, url, init);
+  const result = await requestUpstream(runtime.fetch, url, init, runtime.logger);
   if (result.error !== undefined) return result.error;
   if (result.response === undefined) {
     return openAIError(502, "Unable to connect to the Agnes API.", {
@@ -397,15 +413,28 @@ export function createGatewayApp(
     fetch: options.fetch ?? globalThis.fetch,
     now: options.now ?? (() => Date.now()),
     urls: createAgnesUrls(options.agnesBaseUrl ?? DEFAULT_AGNES_BASE_URL),
+    logger: options.logger ?? DEFAULT_GATEWAY_LOGGER,
   };
   const app = new App<GatewayState>();
 
   app.use(async (ctx) => {
+    const startedAt = runtime.now();
+    runtime.logger.info("gateway_request_started", {
+      method: ctx.req.method,
+      path: logPath(ctx.url.pathname),
+    });
     try {
-      return await ctx.next();
+      const response = await ctx.next();
+      runtime.logger.info("gateway_request_finished", {
+        method: ctx.req.method,
+        path: logPath(ctx.url.pathname),
+        status: response.status,
+        duration_ms: runtime.now() - startedAt,
+      });
+      return response;
     } catch (error) {
       if (error instanceof HttpError) {
-        return openAIError(
+        const response = openAIError(
           error.status,
           error.status === 405
             ? "The HTTP method is not allowed for this endpoint."
@@ -420,11 +449,26 @@ export function createGatewayApp(
               : "http_error",
           },
         );
+        runtime.logger.error("gateway_request_finished", {
+          method: ctx.req.method,
+          path: logPath(ctx.url.pathname),
+          status: response.status,
+          duration_ms: runtime.now() - startedAt,
+        });
+        return response;
       }
-      return openAIError(500, "An internal gateway error occurred.", {
+      const response = openAIError(500, "An internal gateway error occurred.", {
         type: "api_error",
         code: "internal_error",
       });
+      runtime.logger.error("gateway_request_finished", {
+        method: ctx.req.method,
+        path: logPath(ctx.url.pathname),
+        status: response.status,
+        duration_ms: runtime.now() - startedAt,
+        error: "internal_error",
+      });
+      return response;
     }
   });
 
