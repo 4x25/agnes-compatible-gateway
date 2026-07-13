@@ -41,6 +41,15 @@ cd agnes-compatible-gateway
 deno install --frozen
 ```
 
+Enable the repository pre-commit hook so every commit runs the formatting, lint,
+and TypeScript checks:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The hook rejects the commit when `deno task check` fails.
+
 Start the development server with:
 
 ```sh
