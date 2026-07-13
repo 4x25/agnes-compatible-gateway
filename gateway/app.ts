@@ -26,12 +26,12 @@ import {
   type AgnesUrls,
   createAgnesUrls,
   DEFAULT_AGNES_BASE_URL,
+  DEFAULT_GATEWAY_LOGGER,
+  type GatewayLogger,
   parseHttpUrlWithoutUserinfo,
   passthroughResponse,
   readJsonObject,
   requestUpstream,
-  DEFAULT_GATEWAY_LOGGER,
-  type GatewayLogger,
 } from "./upstream.ts";
 
 export { DEFAULT_AGNES_BASE_URL } from "./upstream.ts";
@@ -127,7 +127,12 @@ async function successfulResponseOrError(
   url: URL,
   init: RequestInit,
 ): Promise<Response> {
-  const result = await requestUpstream(runtime.fetch, url, init, runtime.logger);
+  const result = await requestUpstream(
+    runtime.fetch,
+    url,
+    init,
+    runtime.logger,
+  );
   if (result.error !== undefined) return result.error;
   if (result.response === undefined) {
     return openAIError(502, "Unable to connect to the Agnes API.", {
