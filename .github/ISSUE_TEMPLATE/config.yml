@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability / 安全漏洞
+    url: https://github.com/4x25/agnes-compatible-gateway/security/advisories/new
+    about: Report privately; never put credentials or vulnerability details in a public issue. / 请私下报告，勿公开凭据或漏洞细节。
+  - name: Compatibility documentation / 兼容文档
+    url: https://github.com/4x25/agnes-compatible-gateway/blob/master/docs/compatibility.md
+    about: Check intentional translations and known gaps first. / 请先检查转换规则和已知差异。

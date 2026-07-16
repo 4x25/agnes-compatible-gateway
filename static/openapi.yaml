@@ -1,0 +1,1082 @@
+openapi: 3.1.0
+info:
+  title: Agnes OpenAI Compatible Gateway
+  version: 0.1.0
+  summary: Stateless OpenAI-compatible subset for Agnes text, image, and video APIs
+  description: |
+    Unofficial, lightweight BYOK gateway. Every `/v1/*` request uses the
+    caller-provided Agnes bearer key; the service has no production API key and
+    performs no model mapping, persistence, billing, rate limiting, or retries.
+
+    Unknown optional parameters that can be safely omitted are reported in
+    `X-Agnes-Gateway-Ignored-Params`. Required or invalid data returns an
+    OpenAI-shaped error. All `/v1/*` routes support CORS preflight. The API
+    allows any origin, `Accept`, `Authorization`, `Content-Type`, `Range`, and
+    `X-Request-ID` request headers, does not allow cookie credentials, and
+    exposes gateway/request/rate-limit/media response headers. Every
+    credential-derived response, including proxied media, uses
+    `Cache-Control: private, no-store`. Waiting for upstream response headers
+    is limited to 360 seconds; generation requests are never retried.
+  termsOfService: https://github.com/4x25/agnes-compatible-gateway/blob/master/README.md
+  contact:
+    name: Project issue tracker
+    url: https://github.com/4x25/agnes-compatible-gateway/issues
+  license:
+    name: MIT
+    identifier: MIT
+externalDocs:
+  description: Compatibility matrix
+  url: https://github.com/4x25/agnes-compatible-gateway/blob/master/docs/compatibility.md
+servers:
+  - url: /
+    description: Current gateway origin
+tags:
+  - name: Chat
+    description: OpenAI Chat Completions subset backed by Agnes Chat.
+  - name: Images
+    description: Text-to-image and image-to-image compatibility routes.
+  - name: Videos
+    description: Asynchronous video creation, polling, and media streaming.
+  - name: Operations
+    description: Local operational endpoints that never consume Agnes quota.
+x-cors:
+  allowOrigins:
+    - "*"
+  allowMethods:
+    - GET
+    - POST
+    - OPTIONS
+  allowHeaders:
+    - Accept
+    - Authorization
+    - Content-Type
+    - Range
+    - X-Request-ID
+  exposeHeaders:
+    - X-Request-ID
+    - X-Agnes-Request-Id
+    - X-Agnes-Gateway-Ignored-Params
+    - Retry-After
+    - X-RateLimit-Limit
+    - X-RateLimit-Remaining
+    - X-RateLimit-Reset
+    - X-RateLimit-Limit-Requests
+    - X-RateLimit-Remaining-Requests
+    - X-RateLimit-Reset-Requests
+    - X-RateLimit-Limit-Tokens
+    - X-RateLimit-Remaining-Tokens
+    - X-RateLimit-Reset-Tokens
+    - Content-Range
+    - Accept-Ranges
+    - Content-Disposition
+    - Content-Length
+    - ETag
+  allowCredentials: false
+
+paths:
+  /healthz:
+    get:
+      tags: [Operations]
+      operationId: getHealth
+      summary: Check the local gateway process
+      description: Does not require a key and never calls Agnes.
+      security: []
+      responses:
+        "200":
+          description: Gateway process is ready to serve requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/chat/completions:
+    post:
+      tags: [Chat]
+      operationId: createChatCompletion
+      summary: Create a chat completion
+      description: |
+        For JSON responses the Agnes response is preserved. With `stream=true`,
+        upstream SSE bytes are streamed without buffering or invented chunks.
+        `developer` roles become `system`; `max_completion_tokens` becomes
+        `max_tokens`. Each message is rebuilt from only `role` and `content`.
+        `tool` role/tool-result messages are not supported, although top-level
+        `tools` and `tool_choice` are partially compatible pass-through fields.
+      security:
+        - AgnesBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: Chat completion or SSE stream.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            X-Agnes-Gateway-Ignored-Params:
+              $ref: "#/components/headers/IgnoredParams"
+            Access-Control-Allow-Origin:
+              $ref: "#/components/headers/AllowOrigin"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletion"
+            text/event-stream:
+              schema:
+                type: string
+                description: Upstream Agnes SSE byte stream ending with its `[DONE]` marker.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/images/generations:
+    post:
+      tags: [Images]
+      operationId: createImage
+      summary: Generate images
+      description: |
+        Calls Agnes once per requested `n` (1–10) and atomically aggregates the
+        ordered results. Any branch failure fails the entire request; no branch
+        is retried. Aggregate response size is limited to 64 MiB. Standard
+        `response_format` overrides and reports any caller-supplied Agnes
+        `return_base64` or `extra_body.response_format` control.
+      security:
+        - AgnesBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageGenerationRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/ImageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/images/edits:
+    post:
+      tags: [Images]
+      operationId: editImage
+      summary: Edit images through Agnes image-to-image generation
+      description: |
+        OpenAI-style files are converted in memory to Data URIs and sent as
+        Agnes `extra_body.image`. This does not implement pixel-exact mask
+        editing. Standard `image`/`images` and `response_format` fields override
+        their Agnes `extra_body` equivalents. Limits: 20 MiB per file, 50 MiB
+        per request, 16 images.
+      security:
+        - AgnesBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageEditJsonRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImageEditMultipartRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/ImageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/videos:
+    post:
+      tags: [Videos]
+      operationId: createVideo
+      summary: Create an asynchronous video generation task
+      description: |
+        `seconds` defaults to 4 and maps to 24 fps with
+        `num_frames = seconds * 24 + 1`. `size` defaults to `720x1280` and is
+        split into Agnes width and height. The returned public `id` is the Agnes
+        task ID used for subsequent gateway calls. These standard fields and
+        their defaults override direct Agnes frame/size controls; a standard
+        `input_reference` overrides Agnes `image` controls.
+      security:
+        - AgnesBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoCreateRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/VideoCreateMultipartRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/VideoResponse"
+        "201":
+          $ref: "#/components/responses/VideoResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/videos/{video_id}:
+    parameters:
+      - $ref: "#/components/parameters/VideoId"
+    get:
+      tags: [Videos]
+      operationId: retrieveVideo
+      summary: Retrieve or poll a video task
+      description: |
+        The path value is an Agnes task `id`/`task_id`. The gateway calls the
+        stateless legacy Agnes task route and preserves useful Agnes extensions
+        such as `video_id`, `progress`, `url`, normalized size, and duration.
+      security:
+        - AgnesBearer: []
+      responses:
+        "200":
+          $ref: "#/components/responses/VideoResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UpstreamError"
+
+  /v1/videos/{video_id}/content:
+    parameters:
+      - $ref: "#/components/parameters/VideoId"
+    get:
+      tags: [Videos]
+      operationId: downloadVideoContent
+      summary: Stream completed video content
+      description: |
+        Polls the task, then streams its completed media URL. `Range` is
+        forwarded to the media origin; the Agnes Authorization header is not.
+        Agnes cannot supply thumbnails or spritesheets, so those variants fall
+        back to video content and are named in the ignored-params header.
+      security:
+        - AgnesBearer: []
+      parameters:
+        - name: variant
+          in: query
+          required: false
+          description: Compatibility parameter; non-video values currently return video bytes.
+          schema:
+            type: string
+            enum: [video, thumbnail, spritesheet]
+            default: video
+        - name: Range
+          in: header
+          required: false
+          description: HTTP byte range forwarded to the final media origin.
+          schema:
+            type: string
+            pattern: "^bytes="
+          example: bytes=0-1048575
+      responses:
+        "200":
+          description: Complete media stream.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            X-Agnes-Gateway-Ignored-Params:
+              $ref: "#/components/headers/IgnoredParams"
+            Accept-Ranges:
+              schema:
+                type: string
+              description: Range support reported by the media origin.
+            Content-Length:
+              schema:
+                type: integer
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: Requested byte range.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+            Content-Range:
+              required: true
+              schema:
+                type: string
+            Accept-Ranges:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/VideoNotReady"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/UpstreamError"
+
+components:
+  securitySchemes:
+    AgnesBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Agnes API key
+      description: Caller-owned Agnes key. The gateway does not supply or store one.
+
+  parameters:
+    VideoId:
+      name: video_id
+      in: path
+      required: true
+      description: Agnes task `id`/`task_id` returned by video creation.
+      schema:
+        type: string
+        minLength: 1
+
+  headers:
+    RequestId:
+      description: Gateway correlation identifier; safe to use in a redacted report.
+      schema:
+        type: string
+    IgnoredParams:
+      description: |
+        Comma-separated safe request paths removed or overridden before calling
+        Agnes. At most 32 names are exposed, each at most 128 characters. Unsafe
+        names are shown as `<redacted>` and overflow as `<truncated>`.
+      schema:
+        type: string
+    RetryAfter:
+      description: Upstream retry guidance, in seconds or as an HTTP date.
+      schema:
+        type: string
+    AllowOrigin:
+      description: Always `*`; cookie credentials are not supported.
+      schema:
+        type: string
+        const: "*"
+
+  responses:
+    ImageResponse:
+      description: OpenAI-compatible image result. Aggregated results preserve request order.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        X-Agnes-Gateway-Ignored-Params:
+          $ref: "#/components/headers/IgnoredParams"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ImageResult"
+    VideoResponse:
+      description: Current asynchronous Agnes video task metadata.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        X-Agnes-Gateway-Ignored-Params:
+          $ref: "#/components/headers/IgnoredParams"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Video"
+    BadRequest:
+      description: Required input is missing or invalid.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        X-Agnes-Gateway-Ignored-Params:
+          $ref: "#/components/headers/IgnoredParams"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Bearer key is missing, malformed, or rejected by Agnes.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Agnes task was not found.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooLarge:
+      description: Upload, request, file count, or aggregate response limit exceeded.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    VideoNotReady:
+      description: Task has no completed media content yet or has failed.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    RateLimited:
+      description: Agnes or the hosting platform rejected the request due to a limit.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UpstreamError:
+      description: Normalized upstream, transport, or gateway response error.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        Access-Control-Allow-Origin:
+          $ref: "#/components/headers/AllowOrigin"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+      additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, type, param, code]
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            param:
+              type: [string, "null"]
+            code:
+              type: [string, "null"]
+          additionalProperties: false
+      additionalProperties: false
+
+    ChatCompletionRequest:
+      type: object
+      description: |
+        Supported Chat Completions input. Unknown top-level fields are accepted
+        only so the gateway can remove and report them; they are not sent to Agnes.
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          description: Sent to Agnes unchanged.
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        temperature:
+          type: number
+        top_p:
+          type: number
+        max_tokens:
+          type: integer
+          minimum: 1
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+          description: Takes precedence and is renamed to `max_tokens` upstream.
+        stream:
+          type: boolean
+          default: false
+        tools:
+          type: array
+          description: |
+            Partially compatible. Forwarded without nested schema conversion after
+            array validation; tool-result messages are not accepted by ChatMessage.
+          items:
+            type: object
+            additionalProperties: true
+        tool_choice:
+          description: |
+            Partially compatible. Forwarded after validating that the value is a
+            string or object; the gateway does not synthesize tool-call semantics.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+        chat_template_kwargs:
+          type: object
+          description: Agnes extension passed unchanged, including `enable_thinking`.
+          additionalProperties: true
+        thinking:
+          type: object
+          description: Agnes thinking-mode extension passed unchanged.
+          additionalProperties: true
+      additionalProperties: true
+
+    ChatMessage:
+      type: object
+      description: |
+        Only `role` and `content` are sent upstream. Unknown message properties
+        such as `name`, `tool_calls`, and `tool_call_id` are removed and reported.
+        A `tool` role/tool-result message is rejected with `400`.
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [developer, system, user, assistant]
+          description: "`developer` is translated to Agnes `system`."
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              minItems: 1
+              description: |
+                Supports documented text and public image URL blocks. Unsupported
+                block types in a mixed array are removed and reported; if none
+                remain, the request is rejected with `400`.
+              items:
+                oneOf:
+                  - $ref: "#/components/schemas/ChatTextContentPart"
+                  - $ref: "#/components/schemas/ChatImageContentPart"
+      additionalProperties: true
+
+    ChatTextContentPart:
+      type: object
+      description: Unknown properties are removed and reported by their full path.
+      required: [type, text]
+      properties:
+        type:
+          type: string
+          const: text
+        text:
+          type: string
+      additionalProperties: true
+
+    ChatImageContentPart:
+      type: object
+      description: Unknown properties, including image detail controls, are removed and reported.
+      required: [type, image_url]
+      properties:
+        type:
+          type: string
+          const: image_url
+        image_url:
+          oneOf:
+            - type: string
+              format: uri
+            - type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+              additionalProperties: true
+      additionalProperties: true
+
+    ChatCompletion:
+      type: object
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        usage:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+
+    ImageGenerationRequest:
+      type: object
+      description: |
+        Supported image-generation input. Unknown top-level fields are removed
+        and reported. Explicit Agnes extensions are marked below.
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          description: Sent to Agnes unchanged.
+        prompt:
+          type: string
+          minLength: 1
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+        size:
+          type: string
+          default: 1024x1024
+          description: Agnes tier (`1K`–`4K`) or exact-size notation.
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          description: |
+            Standard OpenAI field. For generation, `b64_json` maps to
+            `return_base64: true` and `url` maps to
+            `extra_body.response_format: url`; for edits, both values map to
+            `extra_body.response_format`. It overrides both extension forms.
+        ratio:
+          type: string
+          description: |
+            Agnes extension. Documented values are `1:1`, `3:4`, `4:3`,
+            `16:9`, `9:16`, `2:3`, `3:2`, and `21:9`.
+        return_base64:
+          type: boolean
+          description: |
+            Agnes text-to-image extension. Used only when standard
+            `response_format` is absent; otherwise removed and reported.
+        extra_body:
+          $ref: "#/components/schemas/ImageExtraBody"
+      additionalProperties: true
+
+    ImageExtraBody:
+      type: object
+      description: |
+        Agnes advanced-workflow extensions. The listed fields are documented by
+        Agnes. Other members pass through as non-portable Agnes extensions.
+        Standard OpenAI fields take precedence on conflict.
+      properties:
+        image:
+          $ref: "#/components/schemas/ImageReferenceStrings"
+          description: Agnes image-to-image input extension.
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          description: Agnes output-format extension.
+      additionalProperties: true
+
+    ImageEditJsonRequest:
+      allOf:
+        - $ref: "#/components/schemas/ImageGenerationRequest"
+        - type: object
+          properties:
+            image:
+              $ref: "#/components/schemas/ImageReferences"
+            images:
+              $ref: "#/components/schemas/ImageReferences"
+          anyOf:
+            - required: [image]
+            - required: [images]
+            - required: [extra_body]
+              properties:
+                extra_body:
+                  required: [image]
+
+    ImageReferences:
+      oneOf:
+        - $ref: "#/components/schemas/ImageReference"
+        - type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/ImageReference"
+
+    ImageReference:
+      oneOf:
+        - type: string
+          description: Public URL or Data URI.
+        - type: object
+          description: OpenAI-style reference object. `file_id` is accepted but ignored.
+          properties:
+            image_url:
+              oneOf:
+                - type: string
+                - type: object
+                  required: [url]
+                  properties:
+                    url:
+                      type: string
+                  additionalProperties: true
+            file_id:
+              type: string
+              description: Reported as ignored because the gateway cannot resolve OpenAI Files.
+          additionalProperties: true
+
+    ImageReferenceStrings:
+      oneOf:
+        - type: string
+          description: Public URL or Data URI.
+        - type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            type: string
+            description: Public URL or Data URI.
+
+    ImageEditMultipartRequest:
+      type: object
+      required: [model, prompt]
+      anyOf:
+        - required: [image]
+        - required: ["image[]"]
+        - required: [images]
+        - required: [extra_body]
+          properties:
+            extra_body:
+              required: [image]
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        image:
+          oneOf:
+            - type: string
+              format: binary
+            - type: array
+              maxItems: 16
+              items:
+                type: string
+                format: binary
+        image[]:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            format: binary
+        images:
+          type: array
+          maxItems: 16
+          description: JSON-encoded public URLs or Data URIs in a multipart text field.
+          items:
+            type: string
+        mask:
+          type: string
+          format: binary
+          description: Accepted for client compatibility but ignored; Agnes has no mask-edit equivalent.
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+        size:
+          type: string
+          default: 1024x1024
+        response_format:
+          type: string
+          enum: [url, b64_json]
+          description: |
+            Standard OpenAI field mapped to Agnes
+            `extra_body.response_format`; overrides and reports extension conflicts.
+        ratio:
+          type: string
+          description: Agnes aspect-ratio extension.
+        return_base64:
+          type: boolean
+          description: Agnes extension overridden by standard `response_format`.
+        extra_body:
+          $ref: "#/components/schemas/ImageExtraBody"
+          description: JSON-encoded Agnes extension object in multipart requests.
+      additionalProperties: true
+
+    ImageResult:
+      type: object
+      required: [created, data]
+      properties:
+        created:
+          type: integer
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: [string, "null"]
+                format: uri
+              b64_json:
+                type: [string, "null"]
+              revised_prompt:
+                type: [string, "null"]
+            additionalProperties: true
+      additionalProperties: true
+
+    VideoCreateRequest:
+      type: object
+      description: |
+        Supported video-create input. Unknown top-level fields are removed and
+        reported. Explicit Agnes extensions and overridden controls are marked below.
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          minLength: 1
+          description: Sent to Agnes unchanged.
+        prompt:
+          type: string
+          minLength: 1
+        seconds:
+          oneOf:
+            - type: integer
+              enum: [4, 8, 12]
+            - type: string
+              enum: ["4", "8", "12"]
+          default: 4
+        size:
+          type: string
+          enum: [720x1280, 1280x720, 1024x1792, 1792x1024]
+          default: 720x1280
+        input_reference:
+          description: |
+            Standard OpenAI input image. Overrides Agnes `image` and
+            `extra_body.image` extensions when supplied.
+          oneOf:
+            - type: string
+              description: Public image URL or Data URI.
+            - type: object
+              properties:
+                image_url:
+                  oneOf:
+                    - type: string
+                    - type: object
+                      required: [url]
+                      properties:
+                        url:
+                          type: string
+                      additionalProperties: true
+                file_id:
+                  type: string
+                  description: Accepted but ignored because Agnes cannot resolve OpenAI file IDs.
+              additionalProperties: true
+        image:
+          type: string
+          description: Agnes public-image URL/Data URI extension; overridden by `input_reference`.
+        mode:
+          type: string
+          description: Agnes extension, such as `ti2vid` or `keyframes`.
+        seed:
+          type: integer
+          description: Agnes deterministic-seed extension.
+        negative_prompt:
+          type: string
+          description: Agnes negative-prompt extension.
+        num_inference_steps:
+          type: integer
+          minimum: 1
+          description: Agnes inference-step extension.
+        width:
+          type: integer
+          description: Agnes extension overridden and reported because standard `size` always supplies width.
+        height:
+          type: integer
+          description: Agnes extension overridden and reported because standard `size` always supplies height.
+        num_frames:
+          type: integer
+          description: Agnes extension overridden and reported because standard `seconds` always supplies frame count.
+        frame_rate:
+          type: number
+          description: Agnes extension overridden and reported because standard `seconds` always maps at 24 fps.
+        extra_body:
+          $ref: "#/components/schemas/VideoExtraBody"
+      additionalProperties: true
+
+    VideoExtraBody:
+      type: object
+      description: |
+        Agnes advanced-workflow extensions. The listed fields are documented by
+        Agnes; other members pass through as non-portable Agnes extensions.
+      properties:
+        image:
+          $ref: "#/components/schemas/ImageReferenceStrings"
+          description: Agnes keyframe image extension; overridden by standard `input_reference`.
+        mode:
+          type: string
+          description: Agnes keyframe mode extension, for example `keyframes`.
+      additionalProperties: true
+
+    VideoCreateMultipartRequest:
+      type: object
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        seconds:
+          type: string
+          enum: ["4", "8", "12"]
+          default: "4"
+        size:
+          type: string
+          enum: [720x1280, 1280x720, 1024x1792, 1792x1024]
+          default: 720x1280
+        input_reference:
+          type: string
+          format: binary
+        input_reference[image_url]:
+          type: string
+          description: Official SDK flattened form for a public URL or Data URI.
+        input_reference[file_id]:
+          type: string
+          description: Accepted but ignored because the gateway cannot resolve OpenAI Files.
+        image:
+          type: string
+          description: Agnes public URL or Data URI extension; overridden by `input_reference`.
+        mode:
+          type: string
+          description: Agnes mode extension.
+        seed:
+          type: string
+          description: Multipart integer form of the Agnes seed extension.
+        negative_prompt:
+          type: string
+          description: Agnes negative-prompt extension.
+        num_inference_steps:
+          type: string
+          description: Multipart integer form of the Agnes inference-step extension.
+        width:
+          type: string
+          description: Agnes extension overridden and reported because standard `size` supplies width.
+        height:
+          type: string
+          description: Agnes extension overridden and reported because standard `size` supplies height.
+        num_frames:
+          type: string
+          description: Agnes extension overridden and reported because standard `seconds` supplies frame count.
+        frame_rate:
+          type: string
+          description: Agnes extension overridden and reported because standard `seconds` maps at 24 fps.
+        extra_body:
+          $ref: "#/components/schemas/VideoExtraBody"
+          description: JSON-encoded Agnes extension object in multipart requests.
+      additionalProperties: true
+
+    Video:
+      type: object
+      required: [id, object, model, status]
+      properties:
+        id:
+          type: string
+          description: Agnes task ID used in gateway retrieval paths.
+        task_id:
+          type: string
+          description: Agnes extension equivalent to `id`.
+        video_id:
+          type: string
+          description: Agnes media identity extension; not the gateway retrieval key.
+        object:
+          type: string
+          const: video
+        model:
+          type: string
+        status:
+          type: string
+          enum: [queued, in_progress, completed, failed]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: integer
+        seconds:
+          oneOf:
+            - type: number
+            - type: string
+        size:
+          type: string
+        url:
+          type: [string, "null"]
+          format: uri
+        error:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: true
+      additionalProperties: true

@@ -1,0 +1,37 @@
+name: Feature request / 功能建议
+description: Propose an in-scope compatibility or project improvement. / 提议范围内的兼容或项目改进。
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 问题
+      description: What client or Agnes workflow is blocked? / 哪个客户端或 Agnes 工作流受阻？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / 建议行为
+      description: Include the OpenAI and Agnes field/path mapping, without secrets. / 请说明 OpenAI 与 Agnes 字段/路径映射，勿含敏感信息。
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Project fit / 项目范围
+      options:
+        - Protocol translation / 协议转换
+        - Deployment or observability / 部署或可观测性
+        - Documentation or playground / 文档或在线测试台
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Scope boundaries / 范围边界
+      options:
+        - label: The proposal does not require a server API key, model mapping, persistence, billing, gateway rate limiting, or a durable queue. / 本建议不需要服务端 Key、模型映射、持久化、计费、网关限流或持久队列。
+          required: true

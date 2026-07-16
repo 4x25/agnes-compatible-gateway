@@ -1,11 +1,19 @@
 {
+  "version": "0.1.0",
   "nodeModulesDir": "manual",
   "tasks": {
-    "check": "deno fmt --check . && deno lint . && deno check",
+    "check": "deno fmt --check . && deno lint . && deno check main.ts client.ts scripts/browser_smoke.ts tests/live_contract.ts && deno test -A --no-run",
+    "test": "deno test -A",
+    "test:coverage": "deno test -A --coverage=.coverage && deno coverage .coverage --lcov --output=coverage/lcov.info",
+    "test:browser": "deno run -A scripts/browser_smoke.ts",
+    "test:live": "deno run --allow-net --allow-env=RUN_AGNES_LIVE_TESTS,AGNES_API_KEY_ONLY_FOR_TEST,AGNES_BASE_URL,AGNES_LIVE_SCOPES,AGNES_LIVE_CHAT_MODEL,AGNES_LIVE_IMAGE_MODEL,AGNES_LIVE_VIDEO_MODEL,AGNES_LIVE_VIDEO_WAIT_FOR_COMPLETION tests/live_contract.ts",
     "dev": "vite",
     "build": "vite build",
-    "start": "deno serve -A _fresh/server.js",
+    "start": "deno serve --allow-env --allow-net --allow-read _fresh/server.js",
     "update": "deno run -A -r jsr:@fresh/update ."
+  },
+  "deploy": {
+    "framework": "fresh"
   },
   "lint": {
     "rules": {
@@ -20,10 +28,12 @@
   ],
   "imports": {
     "@/": "./",
+    "@std/yaml": "jsr:@std/yaml@1.1.2",
     "fresh": "jsr:@fresh/core@^2.3.3",
     "preact": "npm:preact@^10.29.1",
     "@preact/signals": "npm:@preact/signals@^2.9.0",
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.1.2",
+    "openai": "npm:openai@6.47.0",
     "vite": "npm:vite@^7.1.3",
     "@types/babel__core": "npm:@types/babel__core@^7.20.5",
     "tailwindcss": "npm:tailwindcss@^4.1.10",

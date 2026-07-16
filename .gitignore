@@ -1,9 +1,7 @@
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+# dotenv environment variable files. Keep every environment-specific spelling
+# out of commits; the empty public template is the sole exception.
+.env*
+!.env.example
 
 # Fresh build directory
 _fresh/
@@ -11,5 +9,8 @@ _fresh/
 node_modules/
 vendor/
 
-deno.lock
-
+# Test and browser artifacts
+.coverage/
+coverage/
+playwright-report/
+test-results/

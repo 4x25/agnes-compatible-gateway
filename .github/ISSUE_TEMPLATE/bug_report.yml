@@ -1,0 +1,66 @@
+name: Bug report / 缺陷报告
+description: Report a reproducible gateway problem without secrets. / 报告可复现且不含敏感信息的问题。
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste an API key, Authorization header, Base64 media, private prompt, or full media URL.**
+        **请勿粘贴 API Key、Authorization、Base64 媒体、私人提示词或完整媒体 URL。**
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment / 部署环境
+      options:
+        - Deno Deploy (current / 新版)
+        - Published Docker image / 已发布 Docker 镜像
+        - Local Docker build / 本地 Docker 构建
+        - Local Deno / 本地 Deno
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      description: Git SHA, image digest, or release tag. / Git SHA、镜像摘要或版本标签。
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint and status / 接口与状态码
+      placeholder: POST /v1/images/edits — 400
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction / 最小复现
+      description: Redact secrets and replace prompts/media with safe placeholders. / 脱敏并用安全占位符替换提示词和媒体。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior / 预期与实际行为
+    validations:
+      required: true
+  - type: input
+    id: request_id
+    attributes:
+      label: Redacted request ID / 脱敏请求 ID
+      description: "`X-Request-ID` only; do not include Authorization. / 仅填写 `X-Request-ID`，不要包含 Authorization。"
+  - type: textarea
+    id: ignored
+    attributes:
+      label: Ignored parameters / 被忽略参数
+      description: "Value of `X-Agnes-Gateway-Ignored-Params`, if present. / 如有，请填写该响应头的值。"
+  - type: checkboxes
+    id: secret_check
+    attributes:
+      label: Safety confirmation / 安全确认
+      options:
+        - label: I removed all credentials and private generated content. / 我已移除全部凭据和私密生成内容。
+          required: true

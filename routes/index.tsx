@@ -1,33 +1,35 @@
-import { useSignal } from "@preact/signals";
 import { Head } from "fresh/runtime";
+import GatewayLanding from "../islands/GatewayLanding.tsx";
 import { define } from "../utils.ts";
-import Counter from "../islands/Counter.tsx";
 
-export default define.page(function Home(ctx) {
-  const count = useSignal(3);
-
-  console.log("Shared value " + ctx.state.shared);
-
+export default define.page(function Home() {
   return (
-    <div class="px-4 py-8 mx-auto fresh-gradient min-h-screen">
+    <>
       <Head>
-        <title>Fresh counter</title>
-      </Head>
-      <div class="max-w-screen-md mx-auto flex flex-col items-center justify-center">
-        <img
-          class="my-6"
-          src="/logo.svg"
-          width="128"
-          height="128"
-          alt="the Fresh logo: a sliced lemon dripping with juice"
+        <title>Agnes Compatible Gateway — OpenAI-compatible API</title>
+        <meta
+          name="description"
+          content="A lightweight, open-source gateway that exposes Agnes AI chat, image, image editing, and video generation through OpenAI-compatible APIs."
         />
-        <h1 class="text-4xl font-bold">Welcome to Fresh</h1>
-        <p class="my-4">
-          Try updating this message in the
-          <code class="mx-2">./routes/index.tsx</code> file, and refresh.
-        </p>
-        <Counter count={count} />
-      </div>
-    </div>
+        <meta
+          name="theme-color"
+          content="#fafafa"
+          media="(prefers-color-scheme: light)"
+        />
+        <meta
+          name="theme-color"
+          content="#151515"
+          media="(prefers-color-scheme: dark)"
+        />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="Agnes OpenAI Compatible Gateway" />
+        <meta
+          property="og:description"
+          content="Bring Agnes AI chat, image, and video generation to the OpenAI tools you already use."
+        />
+        <link rel="icon" type="image/svg+xml" href="/brand-mark.svg" />
+      </Head>
+      <GatewayLanding />
+    </>
   );
 });

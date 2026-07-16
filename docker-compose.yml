@@ -1,0 +1,31 @@
+services:
+  gateway:
+    image: agnes-compatible-gateway:local
+    build:
+      context: .
+      args:
+        DENO_VERSION: "2.5.6"
+        DENO_DEPLOYMENT_ID: "${DENO_DEPLOYMENT_ID:-compose-local}"
+    environment:
+      AGNES_BASE_URL: "${AGNES_BASE_URL:-https://apihub.agnes-ai.com/v1}"
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - deno
+        - eval
+        - "const response = await fetch('http://127.0.0.1:8000/healthz'); if (!response.ok) Deno.exit(1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

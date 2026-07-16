@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Deno ${{ matrix.deno }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Deno Deploy's compatibility baseline plus this release's pinned
+        # stable toolchain. Keep these exact so a registry/toolchain change
+        # cannot silently alter the acceptance matrix.
+        deno:
+          - v2.5.6
+          - v2.9.3
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ matrix.deno }}
+
+      - name: Install locked dependencies
+        run: deno install --frozen
+
+      - name: Format, lint, and type-check
+        run: deno task check
+
+      - name: Run tests
+        run: deno task test
+
+      - name: Build Fresh application
+        run: deno task build
+
+  docker-smoke:
+    name: Docker smoke test
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: >-
+          docker build
+          --build-arg DENO_DEPLOYMENT_ID=ci-${{ github.sha }}
+          --tag agnes-compatible-gateway:ci .
+
+      - name: Start container and verify health
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name gateway-smoke \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --publish 127.0.0.1:18000:8000 \
+            agnes-compatible-gateway:ci
+
+          cleanup() {
+            docker logs gateway-smoke || true
+            docker rm --force gateway-smoke || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:18000/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Container did not become healthy" >&2
+          exit 1
+
+  browser-smoke:
+    name: Chromium landing-page smoke test
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.3
+
+      - name: Install locked dependencies
+        run: deno install --frozen
+
+      - name: Run browser smoke test
+        run: deno task test:browser
