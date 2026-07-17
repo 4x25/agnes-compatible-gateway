@@ -172,8 +172,8 @@ change by itself does not mark a milestone complete.
   Fresh route tests.
 - Chromium 146 exercised Chat SSE cancellation/success, image generation,
   multipart image editing, text-to-video, and image-to-video through a loopback
-  fake Agnes. It observed every public route, video polling/content/preview,
-  four responsive widths, both languages, keyboard/reduced-motion behavior, key
+  fake Agnes. It observed every public route, video polling/content/preview, six
+  responsive widths, both languages, keyboard/reduced-motion behavior, key
   non-persistence, request redaction, and media downloads without Authorization.
 - `deno task test:live` fails closed unless both explicit safety gates are set;
   no real Agnes request was made during this acceptance run.

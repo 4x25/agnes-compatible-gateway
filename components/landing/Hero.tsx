@@ -7,11 +7,16 @@ import type { Locale, Workflow } from "./types.ts";
 interface HeroProps {
   locale: Locale;
   copy: typeof import("./content.ts").COPY[Locale];
+  gatewayOrigin: string;
 }
 
 type ExampleMode = "curl" | "sdk";
 
-function exampleFor(workflow: Workflow, mode: ExampleMode) {
+function exampleFor(
+  workflow: Workflow,
+  mode: ExampleMode,
+  gatewayOrigin: string,
+) {
   const model = DEFAULT_MODELS[workflow];
 
   if (mode === "sdk") {
@@ -20,7 +25,7 @@ function exampleFor(workflow: Workflow, mode: ExampleMode) {
         return `import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://your-gateway.example/v1",
+  baseURL: "${gatewayOrigin}/v1",
   apiKey: process.env.AGNES_API_KEY,
 });
 
@@ -71,7 +76,7 @@ const done = await client.videos.retrieve(video.id);`;
 
   switch (workflow) {
     case "chat":
-      return `curl https://your-gateway.example/v1/chat/completions \\
+      return `curl ${gatewayOrigin}/v1/chat/completions \\
   -H "Authorization: Bearer $AGNES_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -80,7 +85,7 @@ const done = await client.videos.retrieve(video.id);`;
     "stream": true
   }'`;
     case "image":
-      return `curl https://your-gateway.example/v1/images/generations \\
+      return `curl ${gatewayOrigin}/v1/images/generations \\
   -H "Authorization: Bearer $AGNES_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -89,13 +94,13 @@ const done = await client.videos.retrieve(video.id);`;
     "size": "1024x1024"
   }'`;
     case "edit":
-      return `curl https://your-gateway.example/v1/images/edits \\
+      return `curl ${gatewayOrigin}/v1/images/edits \\
   -H "Authorization: Bearer $AGNES_API_KEY" \\
   -F "model=${model}" \\
   -F "prompt=Turn the daylight scene into blue hour" \\
   -F "image=@./reference.png"`;
     case "textVideo":
-      return `curl https://your-gateway.example/v1/videos \\
+      return `curl ${gatewayOrigin}/v1/videos \\
   -H "Authorization: Bearer $AGNES_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -105,7 +110,7 @@ const done = await client.videos.retrieve(video.id);`;
     "size": "720x1280"
   }'`;
     case "imageVideo":
-      return `curl https://your-gateway.example/v1/videos \\
+      return `curl ${gatewayOrigin}/v1/videos \\
   -H "Authorization: Bearer $AGNES_API_KEY" \\
   -F "model=${model}" \\
   -F "prompt=Slow camera push through the scene" \\
@@ -115,10 +120,13 @@ const done = await client.videos.retrieve(video.id);`;
 }
 
 /** Hero code panel is the page's primary visual, using real compatible calls. */
-export function Hero({ locale, copy }: HeroProps) {
+export function Hero({ locale, copy, gatewayOrigin }: HeroProps) {
   const [workflow, setWorkflow] = useState<Workflow>("chat");
   const [mode, setMode] = useState<ExampleMode>("curl");
-  const example = useMemo(() => exampleFor(workflow, mode), [workflow, mode]);
+  const example = useMemo(
+    () => exampleFor(workflow, mode, gatewayOrigin),
+    [workflow, mode, gatewayOrigin],
+  );
 
   return (
     <section class="hero shell" aria-labelledby="hero-title">

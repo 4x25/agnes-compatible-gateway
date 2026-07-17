@@ -54,7 +54,6 @@ export const COPY = {
     nav: {
       playground: "Live test",
       compatibility: "Compatibility",
-      quickstart: "Quick start",
       deploy: "Deploy",
       faq: "FAQ",
       menu: "Open navigation",
@@ -80,17 +79,12 @@ export const COPY = {
     playground: {
       eyebrow: "USE YOUR OWN KEY",
       title: "Run a real request",
-      intro:
-        "Requests go directly from this browser to the gateway you select. Your Agnes key stays only in this page's memory.",
+      intro: "Your Agnes key stays only in this page's memory.",
       key: "Agnes API key",
       keyHint: "Never saved to cookies, localStorage, or analytics.",
       show: "Show key",
       hide: "Hide key",
       clear: "Clear sensitive data",
-      base: "Gateway base URL",
-      baseHint: "The current deployment is used by default.",
-      advanced: "Connection settings",
-      destination: "Request destination",
       model: "Model",
       prompt: "Prompt",
       message: "Message",
@@ -112,7 +106,6 @@ export const COPY = {
       requiredPrompt: "Enter a prompt or message.",
       requiredImage: "Choose an image for this workflow.",
       invalidImage: "Choose a PNG, JPEG, or WebP image no larger than 20 MiB.",
-      invalidBase: "Enter an absolute http:// or https:// gateway URL.",
       request: "Request",
       result: "Result",
       empty: "Your response will appear here.",
@@ -131,19 +124,12 @@ export const COPY = {
       copyJson: "Copy JSON",
       download: "Download",
       openMedia: "Open media",
-      noPersistence:
-        "The inspector redacts Authorization and keeps response bodies in memory only.",
     },
     compatibility: {
       eyebrow: "EXPLICIT, NOT MAGICAL",
       title: "Know exactly what changes",
       intro:
-        "The gateway transforms only the mismatches it can resolve safely. Models are always passed through unchanged.",
-      all: "All",
-      text: "Text",
-      images: "Images",
-      video: "Video",
-      differences: "Only differences",
+        "The gateway transforms only the mismatches it can resolve safely.",
       capability: "Capability / route",
       request: "OpenAI input",
       mapping: "Gateway behavior",
@@ -191,29 +177,7 @@ export const COPY = {
         ],
       ],
     },
-    security: {
-      eyebrow: "REQUEST TRANSPARENCY",
-      title: "Your credential has a short path",
-      steps: ["This browser", "Your gateway", "Agnes AI"],
-      body:
-        "The production gateway has no server-side API key. It forwards the Bearer credential supplied for each request, and logs only redacted request metadata.",
-      memory: "Key lifecycle",
-      memoryBody:
-        "Component memory only; clear it at any time or close the tab.",
-      storage: "Not persisted",
-      storageBody:
-        "Keys, media, prompts, and responses never enter localStorage.",
-      audit: "Auditable",
-      auditBody: "Follow the request path in the open-source route handlers.",
-      source: "Inspect the source",
-    },
-    quickstart: {
-      eyebrow: "FIVE-MINUTE START",
-      title: "Point your client at the gateway",
-      intro:
-        "Keep your Agnes model name and API key. Change only the OpenAI client's base URL.",
-      sdk: "OpenAI SDK",
-      curl: "cURL",
+    deploy: {
       docker: "Docker",
       deno: "Deno Deploy",
       dockerBody:
@@ -294,7 +258,6 @@ export const COPY = {
     nav: {
       playground: "在线测试",
       compatibility: "接口差异",
-      quickstart: "快速开始",
       deploy: "部署",
       faq: "常见问题",
       menu: "打开导航",
@@ -320,17 +283,12 @@ export const COPY = {
     playground: {
       eyebrow: "使用你自己的 KEY",
       title: "发起一次真实请求",
-      intro:
-        "请求从当前浏览器直接发往你选择的网关。Agnes Key 只保留在本页内存中。",
+      intro: "Agnes Key 只保留在本页内存中。",
       key: "Agnes API Key",
       keyHint: "不会写入 Cookie、localStorage 或分析服务。",
       show: "显示 Key",
       hide: "隐藏 Key",
       clear: "清除敏感数据",
-      base: "网关 Base URL",
-      baseHint: "默认使用当前部署地址。",
-      advanced: "连接设置",
-      destination: "请求目标",
       model: "模型",
       prompt: "提示词",
       message: "消息",
@@ -352,7 +310,6 @@ export const COPY = {
       requiredPrompt: "请输入提示词或消息。",
       requiredImage: "此工作流需要选择一张图片。",
       invalidImage: "请选择不超过 20 MiB 的 PNG、JPEG 或 WebP 图片。",
-      invalidBase: "请输入以 http:// 或 https:// 开头的完整网关地址。",
       request: "请求",
       result: "结果",
       empty: "响应将显示在这里。",
@@ -371,17 +328,11 @@ export const COPY = {
       copyJson: "复制 JSON",
       download: "下载",
       openMedia: "打开媒体",
-      noPersistence: "检查器会对 Authorization 脱敏，也不会持久化响应正文。",
     },
     compatibility: {
       eyebrow: "明确转换，不做魔法",
       title: "准确了解每一处差异",
-      intro: "网关只转换能够安全抹平的差异；模型名始终原样透传。",
-      all: "全部",
-      text: "文本",
-      images: "图像",
-      video: "视频",
-      differences: "仅看差异",
+      intro: "网关只转换能够安全抹平的差异。",
       capability: "能力 / 路由",
       request: "OpenAI 输入",
       mapping: "网关行为",
@@ -429,27 +380,7 @@ export const COPY = {
         ],
       ],
     },
-    security: {
-      eyebrow: "请求透明",
-      title: "你的凭据只走最短路径",
-      steps: ["当前浏览器", "你的网关", "Agnes AI"],
-      body:
-        "线上网关没有服务端 API Key。它只转发每次请求携带的 Bearer 凭据，日志仅保留脱敏的请求元数据。",
-      memory: "Key 生命周期",
-      memoryBody: "只存在于组件内存；可随时清除，关闭标签页后自然释放。",
-      storage: "不持久化",
-      storageBody: "Key、媒体、提示词和响应均不会进入 localStorage。",
-      audit: "可审计",
-      auditBody: "可在开源路由处理器中查看完整请求路径。",
-      source: "检查源代码",
-    },
-    quickstart: {
-      eyebrow: "五分钟开始",
-      title: "把客户端指向网关",
-      intro:
-        "继续使用 Agnes 模型名和 API Key；只需修改 OpenAI 客户端的 base URL。",
-      sdk: "OpenAI SDK",
-      curl: "cURL",
+    deploy: {
       docker: "Docker",
       deno: "Deno Deploy",
       dockerBody:

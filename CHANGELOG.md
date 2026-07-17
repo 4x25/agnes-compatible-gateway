@@ -26,6 +26,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The landing page now uses its current request origin in runnable examples and
+  the same-origin playground, removes duplicate setup/security sections and
+  compatibility filters, and keeps the full brand name visible on narrow
+  headers.
 - Chat input messages are rebuilt from documented `role`/`content` fields;
   unknown nested fields are reported and removed, while undocumented `tool`
   role/tool-result messages are rejected. Top-level `tools` and `tool_choice`

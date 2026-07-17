@@ -2,7 +2,7 @@ import { Head } from "fresh/runtime";
 import GatewayLanding from "../islands/GatewayLanding.tsx";
 import { define } from "../utils.ts";
 
-export default define.page(function Home() {
+export default define.page(function Home({ url }) {
   return (
     <>
       <Head>
@@ -29,7 +29,7 @@ export default define.page(function Home() {
         />
         <link rel="icon" type="image/svg+xml" href="/brand-mark.svg" />
       </Head>
-      <GatewayLanding />
+      <GatewayLanding gatewayOrigin={url.origin} />
     </>
   );
 });

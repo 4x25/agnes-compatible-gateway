@@ -7,7 +7,8 @@ project does not need Playwright, Puppeteer, or a downloaded browser package. It
 verifies:
 
 - switching between English and Simplified Chinese;
-- absence of page-level horizontal overflow at 360, 600, 1024, and 1280 px;
+- absence of page-level horizontal overflow at 320, 360, 430, 600, 1024, and
+  1280 px, including compact-header brand/action visibility;
 - keyboard Tab order, visible focus, labels, and button/tab semantics for the
   locale, API-key, and playground controls;
 - computed styles under `prefers-reduced-motion: reduce`, including disabled

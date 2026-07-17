@@ -12,7 +12,12 @@ import type { Locale } from "../components/landing/types.ts";
 
 type Theme = "light" | "dark";
 
-export default function GatewayLanding() {
+interface GatewayLandingProps {
+  /** Request origin rendered by Fresh, including protocol and optional port. */
+  gatewayOrigin: string;
+}
+
+export default function GatewayLanding({ gatewayOrigin }: GatewayLandingProps) {
   const [locale, setLocale] = useState<Locale>("en");
   const [theme, setTheme] = useState<Theme>("light");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,7 +58,6 @@ export default function GatewayLanding() {
   const navItems = [
     ["playground", copy.nav.playground],
     ["compatibility", copy.nav.compatibility],
-    ["quickstart", copy.nav.quickstart],
     ["deploy", copy.nav.deploy],
     ["faq", copy.nav.faq],
   ] as const;
@@ -141,8 +145,12 @@ export default function GatewayLanding() {
 
       <main id="main">
         <div id="top" class="anchor-target" />
-        <Hero locale={locale} copy={copy} />
-        <Playground locale={locale} copy={copy} />
+        <Hero locale={locale} copy={copy} gatewayOrigin={gatewayOrigin} />
+        <Playground
+          locale={locale}
+          copy={copy}
+          gatewayOrigin={gatewayOrigin}
+        />
         <InformationSections locale={locale} copy={copy} />
       </main>
       <SiteFooter copy={copy} locale={locale} />

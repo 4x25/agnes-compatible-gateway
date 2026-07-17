@@ -161,7 +161,7 @@ credentials。错误统一为 OpenAI 风格的
   OpenAPI 契约测试和 3 项 Fresh 路由测试。
 - Chromium 146 通过 loopback 假 Agnes 覆盖 Chat SSE 取消/成功、图片生成、
   multipart 图片编辑、文生视频与图生视频；同时验证全部公开接口、视频轮询/
-  内容/预览、四种响应式宽度、中英文、键盘与 reduced-motion、Key 不持久化、
+  内容/预览、六种响应式宽度、中英文、键盘与 reduced-motion、Key 不持久化、
   请求脱敏，以及媒体下载不携带 Authorization。
 - `deno task test:live` 在两个显式安全开关未同时设置时会按设计失败关闭；
   本次验收未发出任何真实 Agnes 请求。

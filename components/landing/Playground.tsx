@@ -7,10 +7,11 @@ import type { Locale, ResultState, UploadedImage, Workflow } from "./types.ts";
 interface PlaygroundProps {
   locale: Locale;
   copy: typeof COPY[Locale];
+  gatewayOrigin: string;
 }
 
 type ValidationErrors = Partial<
-  Record<"key" | "model" | "prompt" | "image" | "base", string>
+  Record<"key" | "model" | "prompt" | "image", string>
 >;
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -28,24 +29,8 @@ const FAILED_VIDEO_STATUSES = new Set([
   "canceled",
 ]);
 
-function joinApiUrl(base: string, path: string) {
-  const cleanBase = base.replace(/\/+$/, "");
-  // Accept both an origin and the conventional OpenAI `baseURL` ending in /v1.
-  if (cleanBase.endsWith("/v1") && path.startsWith("/v1/")) {
-    return `${cleanBase}${path.slice(3)}`;
-  }
-  return `${cleanBase}${path}`;
-}
-
-function isValidBaseUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") &&
-      !url.username && !url.password && !url.search && !url.hash &&
-      !value.includes("?") && !value.includes("#");
-  } catch {
-    return false;
-  }
+function joinApiUrl(origin: string, path: string) {
+  return `${origin.replace(/\/+$/, "")}${path}`;
 }
 
 function requestIdFrom(headers: Headers) {
@@ -205,11 +190,10 @@ function isVideoWorkflow(workflow: Workflow) {
  * A real, browser-side API client. Credential and response state deliberately
  * live only in Preact memory; the sole persisted value here is the selected tab.
  */
-export function Playground({ locale, copy }: PlaygroundProps) {
+export function Playground({ locale, copy, gatewayOrigin }: PlaygroundProps) {
   const [workflow, setWorkflowState] = useState<Workflow>("chat");
   const [key, setKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [baseUrl, setBaseUrl] = useState("");
   const [models, setModels] = useState({ ...DEFAULT_MODELS });
   const [prompt, setPrompt] = useState("");
   const [stream, setStream] = useState(true);
@@ -228,10 +212,6 @@ export function Playground({ locale, copy }: PlaygroundProps) {
 
   const endpoint = ENDPOINTS.find((entry) => entry.id === workflow)!;
   const currentModel = models[workflow];
-  const destination = baseUrl && isValidBaseUrl(baseUrl)
-    ? joinApiUrl(baseUrl, endpoint.path)
-    : endpoint.path;
-
   useEffect(() => {
     const stored = localStorage.getItem("agnes-gateway.endpoint") as
       | Workflow
@@ -239,7 +219,6 @@ export function Playground({ locale, copy }: PlaygroundProps) {
     if (stored && ENDPOINTS.some((item) => item.id === stored)) {
       setWorkflowState(stored);
     }
-    setBaseUrl(globalThis.location.origin);
   }, []);
 
   useEffect(() => () => {
@@ -290,7 +269,6 @@ export function Playground({ locale, copy }: PlaygroundProps) {
     if (!key.trim()) next.key = copy.playground.requiredKey;
     if (!currentModel.trim()) next.model = copy.playground.requiredModel;
     if (!prompt.trim()) next.prompt = copy.playground.requiredPrompt;
-    if (!isValidBaseUrl(baseUrl)) next.base = copy.playground.invalidBase;
     if ((workflow === "edit" || workflow === "imageVideo") && !upload) {
       next.image = copy.playground.requiredImage;
     }
@@ -359,14 +337,14 @@ export function Playground({ locale, copy }: PlaygroundProps) {
     };
     setSanitizedRequest({
       method: "POST",
-      url: joinApiUrl(baseUrl, endpoint.path),
+      url: joinApiUrl(gatewayOrigin, endpoint.path),
       headers: {
         Authorization: "Bearer ••••••••",
         "Content-Type": "application/json",
       },
       body,
     });
-    const response = await fetch(joinApiUrl(baseUrl, endpoint.path), {
+    const response = await fetch(joinApiUrl(gatewayOrigin, endpoint.path), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key.trim()}`,
@@ -445,7 +423,7 @@ export function Playground({ locale, copy }: PlaygroundProps) {
   }
 
   async function sendImage(controller: AbortController) {
-    const url = joinApiUrl(baseUrl, endpoint.path);
+    const url = joinApiUrl(gatewayOrigin, endpoint.path);
     const common = {
       model: currentModel.trim(),
       prompt: prompt.trim(),
@@ -518,7 +496,7 @@ export function Playground({ locale, copy }: PlaygroundProps) {
   }
 
   async function sendVideo(controller: AbortController) {
-    const url = joinApiUrl(baseUrl, endpoint.path);
+    const url = joinApiUrl(gatewayOrigin, endpoint.path);
     const common = {
       model: currentModel.trim(),
       prompt: prompt.trim(),
@@ -601,7 +579,7 @@ export function Playground({ locale, copy }: PlaygroundProps) {
     while (Date.now() < deadline) {
       await abortableDelay(2000, controller.signal);
       const retrieveUrl = joinApiUrl(
-        baseUrl,
+        gatewayOrigin,
         `/v1/videos/${encodeURIComponent(taskId)}`,
       );
       const response = await fetch(retrieveUrl, {
@@ -641,7 +619,7 @@ export function Playground({ locale, copy }: PlaygroundProps) {
     // Fetch through the authenticated content route; <video src> cannot attach
     // Authorization itself. The temporary Blob URL is revoked on retry/unmount.
     const contentUrl = joinApiUrl(
-      baseUrl,
+      gatewayOrigin,
       `/v1/videos/${encodeURIComponent(taskId)}/content`,
     );
     const mediaResponse = await fetch(contentUrl, {
@@ -734,39 +712,6 @@ export function Playground({ locale, copy }: PlaygroundProps) {
             {errors.key ?? copy.playground.keyHint}
           </p>
         </div>
-
-        <details class="connection-settings">
-          <summary>
-            <Icon name="chevron" />
-            {copy.playground.advanced}
-          </summary>
-          <div class="connection-grid">
-            <label class="form-field">
-              <span>{copy.playground.base}</span>
-              <input
-                type="url"
-                inputMode="url"
-                value={baseUrl}
-                onInput={(event) => {
-                  setBaseUrl(event.currentTarget.value);
-                  setErrors((current) => ({ ...current, base: undefined }));
-                }}
-                aria-invalid={Boolean(errors.base)}
-                aria-describedby={errors.base ? "base-error" : "base-hint"}
-              />
-              <small
-                id={errors.base ? "base-error" : "base-hint"}
-                class={errors.base ? "field-error" : ""}
-              >
-                {errors.base ?? copy.playground.baseHint}
-              </small>
-            </label>
-            <div class="destination-card">
-              <span>{copy.playground.destination}</span>
-              <code>{destination}</code>
-            </div>
-          </div>
-        </details>
 
         <div
           class="endpoint-tabs endpoint-tabs-light"
@@ -981,7 +926,6 @@ export function Playground({ locale, copy }: PlaygroundProps) {
                       : copy.playground.retry}
                   </button>
                 )}
-              <span>{copy.playground.noPersistence}</span>
             </div>
           </form>
 

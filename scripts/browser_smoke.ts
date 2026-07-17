@@ -30,7 +30,7 @@ const CHROMIUM_COMMAND_CANDIDATES = [
 // A cold production build can take several minutes on constrained CI or network
 // filesystems. Individual phases use this deadline independently.
 const DEFAULT_TIMEOUT_MS = 600_000;
-const VIEWPORTS = [360, 600, 1024, 1280] as const;
+const VIEWPORTS = [320, 360, 430, 600, 1024, 1280] as const;
 const VIEWPORT_HEIGHT = 900;
 const TEST_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -120,6 +120,13 @@ interface OverflowResult {
   rootScrollWidth: number;
   bodyClientWidth: number;
   bodyScrollWidth: number;
+  brandTextVisible: boolean;
+  brandMarkVisible: boolean;
+  githubVisible: boolean;
+  themeVisible: boolean;
+  localeVisible: boolean;
+  menuVisible: boolean;
+  headerItemsDoNotOverlap: boolean;
 }
 
 interface CredentialScan {
@@ -862,6 +869,133 @@ async function testLanguages(client: CdpClient, timeoutMs: number) {
   console.log("✓ English and Simplified Chinese switching");
 }
 
+async function testSimplifiedPage(
+  client: CdpClient,
+  gatewayOrigin: string,
+) {
+  const snapshot = await client.evaluate<{
+    playgroundIntro: string;
+    compatibilityIntro: string;
+    connectionSettingsRemoved: boolean;
+    requestHintRemoved: boolean;
+    matrixControlsRemoved: boolean;
+    credentialSectionRemoved: boolean;
+    quickStartRemoved: boolean;
+    compatibilityTableRows: number;
+    compatibilityCardRows: number;
+    placeholderRemoved: boolean;
+  }>(`(() => ({
+    playgroundIntro:
+      document.querySelector("#playground-title")?.parentElement
+        ?.parentElement?.querySelector(":scope > p")?.textContent?.trim() ?? "",
+    compatibilityIntro:
+      document.querySelector("#compatibility-title")?.parentElement
+        ?.parentElement?.querySelector(":scope > p")?.textContent?.trim() ?? "",
+    connectionSettingsRemoved:
+      document.querySelector(".connection-settings") === null,
+    requestHintRemoved: document.querySelector(".panel-actions > span") === null,
+    matrixControlsRemoved: document.querySelector(".matrix-controls") === null,
+    credentialSectionRemoved:
+      document.querySelector(".security-section") === null,
+    quickStartRemoved: document.querySelector("#quickstart") === null &&
+      document.querySelector('a[href="#quickstart"]') === null &&
+      document.querySelector('button[onclick*="quickstart"]') === null,
+    compatibilityTableRows:
+      document.querySelectorAll(".compatibility-table tbody tr").length,
+    compatibilityCardRows:
+      document.querySelectorAll(".compatibility-cards > article").length,
+    placeholderRemoved:
+      !document.documentElement.innerHTML.includes("your-gateway.example")
+  }))()`);
+
+  assert(
+    snapshot.playgroundIntro ===
+      "Your Agnes key stays only in this page's memory.",
+    "the live-test introduction was not shortened",
+  );
+  assert(
+    snapshot.compatibilityIntro ===
+      "The gateway transforms only the mismatches it can resolve safely.",
+    "the compatibility introduction was not shortened",
+  );
+  assert(
+    snapshot.connectionSettingsRemoved && snapshot.requestHintRemoved &&
+      snapshot.matrixControlsRemoved && snapshot.credentialSectionRemoved &&
+      snapshot.quickStartRemoved,
+    "a removed landing-page control or section is still rendered",
+  );
+  assert(
+    snapshot.compatibilityTableRows === 6 &&
+      snapshot.compatibilityCardRows === 6,
+    "the unfiltered compatibility matrix does not contain all six routes",
+  );
+  assert(snapshot.placeholderRemoved, "the placeholder gateway host remains");
+
+  const curlExamples = await client.evaluate<string[]>(`(async () => {
+    const workbench = document.querySelector(
+      '[data-od-id="hero-code-workbench"]'
+    );
+    const curl = Array.from(workbench?.querySelectorAll(".code-mode button") ?? [])
+      .find((button) => button.textContent?.trim() === "cURL");
+    if (!(curl instanceof HTMLButtonElement)) return [];
+    curl.click();
+    const tabs = Array.from(
+      workbench?.querySelectorAll(".endpoint-tabs-dark [role=tab]") ?? []
+    );
+    const result = [];
+    for (const tab of tabs) {
+      if (!(tab instanceof HTMLButtonElement)) continue;
+      tab.click();
+      await new Promise((resolve) => requestAnimationFrame(() =>
+        requestAnimationFrame(resolve)
+      ));
+      result.push(workbench?.querySelector(".code-body pre")?.textContent ?? "");
+    }
+    return result;
+  })()`);
+  const expectedPaths = [
+    "/v1/chat/completions",
+    "/v1/images/generations",
+    "/v1/images/edits",
+    "/v1/videos",
+    "/v1/videos",
+  ];
+  assert(
+    curlExamples.length === expectedPaths.length,
+    "hero cURL tabs missing",
+  );
+  expectedPaths.forEach((path, index) => {
+    assert(
+      curlExamples[index].includes(`${gatewayOrigin}${path}`),
+      `hero cURL example ${index} does not use the current origin`,
+    );
+  });
+
+  const sdkExample = await client.evaluate<string>(`(async () => {
+    const workbench = document.querySelector(
+      '[data-od-id="hero-code-workbench"]'
+    );
+    const firstTab = workbench?.querySelector(
+      ".endpoint-tabs-dark [role=tab]"
+    );
+    const sdk = Array.from(workbench?.querySelectorAll(".code-mode button") ?? [])
+      .find((button) => button.textContent?.trim() === "OpenAI SDK");
+    if (!(firstTab instanceof HTMLButtonElement) ||
+      !(sdk instanceof HTMLButtonElement)) return "";
+    firstTab.click();
+    sdk.click();
+    await new Promise((resolve) => requestAnimationFrame(() =>
+      requestAnimationFrame(resolve)
+    ));
+    return workbench?.querySelector(".code-body pre")?.textContent ?? "";
+  })()`);
+  assert(
+    sdkExample.includes(`baseURL: "${gatewayOrigin}/v1"`),
+    "hero SDK example does not use the current origin",
+  );
+  console.log("✓ Simplified sections and current-origin examples");
+}
+
 async function testViewports(client: CdpClient) {
   for (const width of VIEWPORTS) {
     await client.call("Emulation.setDeviceMetricsOverride", {
@@ -879,12 +1013,42 @@ async function testViewports(client: CdpClient) {
       ));
       const root = document.documentElement;
       const body = document.body;
+      const visible = (element) => {
+        if (!(element instanceof HTMLElement)) return false;
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" &&
+          rect.width > 0 && rect.height > 0;
+      };
+      const brand = document.querySelector(".site-header .brand");
+      const brandText = document.querySelector(
+        ".site-header .brand > span:not(.brand-mark)"
+      );
+      const brandMark = document.querySelector(".site-header .brand-mark");
+      const actions = document.querySelector(".site-header .header-actions");
+      const github = document.querySelector(".site-header .github-chip");
+      const theme = document.querySelector(
+        ".site-header .header-actions > .icon-button:not(.menu-button)"
+      );
+      const locale = document.querySelector(".site-header .locale-button");
+      const menu = document.querySelector(".site-header .menu-button");
+      const brandRect = brand?.getBoundingClientRect();
+      const actionsRect = actions?.getBoundingClientRect();
       return {
         width: innerWidth,
         rootClientWidth: root.clientWidth,
         rootScrollWidth: root.scrollWidth,
         bodyClientWidth: body.clientWidth,
-        bodyScrollWidth: body.scrollWidth
+        bodyScrollWidth: body.scrollWidth,
+        brandTextVisible: visible(brandText),
+        brandMarkVisible: visible(brandMark),
+        githubVisible: visible(github),
+        themeVisible: visible(theme),
+        localeVisible: visible(locale),
+        menuVisible: visible(menu),
+        headerItemsDoNotOverlap: Boolean(brandRect && actionsRect) &&
+          brandRect.right <= actionsRect.left &&
+          brandRect.left >= 0 && actionsRect.right <= innerWidth
       };
     })()`);
     assert(
@@ -898,6 +1062,24 @@ async function testViewports(client: CdpClient) {
       `${width}px viewport overflows horizontally ` +
         `(root +${rootOverflow}px, body +${bodyOverflow}px)`,
     );
+    if (width === 320 || width === 360) {
+      assert(
+        result.brandTextVisible && result.githubVisible &&
+          result.themeVisible && result.localeVisible && result.menuVisible,
+        `${width}px header visibility mismatch ` +
+          `(brand=${result.brandTextVisible}, github=${result.githubVisible}, ` +
+          `theme=${result.themeVisible}, locale=${result.localeVisible}, ` +
+          `menu=${result.menuVisible})`,
+      );
+      assert(
+        result.headerItemsDoNotOverlap,
+        `${width}px header brand and actions overlap or leave the viewport`,
+      );
+      assert(
+        result.brandMarkVisible === (width >= 360),
+        `${width}px header has the wrong brand-mark visibility`,
+      );
+    }
     console.log(`✓ ${width}px viewport has no horizontal page overflow`);
   }
 }
@@ -1649,6 +1831,10 @@ async function main() {
     );
 
     await testLanguages(client, timeoutMs);
+    await testSimplifiedPage(
+      client,
+      new URL(serverResult.baseUrl).origin,
+    );
     await testViewports(client);
     await testKeyboardAccessibility(client);
     await testReducedMotion(client);

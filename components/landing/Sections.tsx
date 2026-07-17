@@ -1,4 +1,3 @@
-import { useMemo, useState } from "preact/hooks";
 import { BrandMark } from "./BrandMark.tsx";
 import { CopyButton } from "./CopyButton.tsx";
 import { COPY, REPOSITORY_URL } from "./content.ts";
@@ -9,30 +8,6 @@ interface SectionsProps {
   locale: Locale;
   copy: typeof COPY[Locale];
 }
-
-type CompatibilityFilter = "all" | "text" | "images" | "video";
-
-const SDK_SNIPPET = `import OpenAI from "openai";
-
-const client = new OpenAI({
-  baseURL: "https://your-gateway.example/v1",
-  apiKey: process.env.AGNES_API_KEY,
-});
-
-const response = await client.chat.completions.create({
-  model: "agnes-2.0-flash", // Passed through unchanged
-  messages: [{ role: "user", content: "Hello, Agnes." }],
-});
-
-console.log(response.choices[0].message.content);`;
-
-const CURL_SNIPPET = `curl https://your-gateway.example/v1/chat/completions \\
-  -H "Authorization: Bearer $AGNES_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model": "agnes-2.0-flash",
-    "messages": [{"role":"user","content":"Hello, Agnes."}]
-  }'`;
 
 const DOCKER_SNIPPET = `docker run --rm -p 8000:8000 \\
   -e AGNES_BASE_URL=https://apihub.agnes-ai.com/v1 \\
@@ -76,8 +51,6 @@ function StatusTag(
 }
 
 function Compatibility({ copy }: { copy: typeof COPY[Locale] }) {
-  const [filter, setFilter] = useState<CompatibilityFilter>("all");
-  const [onlyDifferences, setOnlyDifferences] = useState(false);
   const routes = [
     "/v1/chat/completions",
     "/v1/images/generations",
@@ -86,31 +59,10 @@ function Compatibility({ copy }: { copy: typeof COPY[Locale] }) {
     "/v1/videos/{id}",
     "/v1/videos/{id}/content",
   ];
-  const categories: CompatibilityFilter[] = [
-    "text",
-    "images",
-    "images",
-    "video",
-    "video",
-    "video",
-  ];
-  const rows = useMemo(() =>
-    copy.compatibility.rows.map((row, index) => ({
-      row,
-      route: routes[index],
-      category: categories[index],
-    })).filter(({ row, category }) => {
-      if (filter !== "all" && category !== filter) return false;
-      if (onlyDifferences && row[3] === "pass") return false;
-      return true;
-    }), [copy, filter, onlyDifferences]);
-
-  const filters: [CompatibilityFilter, string][] = [
-    ["all", copy.compatibility.all],
-    ["text", copy.compatibility.text],
-    ["images", copy.compatibility.images],
-    ["video", copy.compatibility.video],
-  ];
+  const rows = copy.compatibility.rows.map((row, index) => ({
+    row,
+    route: routes[index],
+  }));
 
   return (
     <section
@@ -125,32 +77,6 @@ function Compatibility({ copy }: { copy: typeof COPY[Locale] }) {
           body={copy.compatibility.intro}
           id="compatibility-title"
         />
-        <div class="matrix-controls">
-          <div role="group" aria-label="Filter compatibility matrix">
-            {filters.map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                class={filter === value ? "active" : ""}
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <label class="toggle-field">
-            <input
-              type="checkbox"
-              checked={onlyDifferences}
-              onChange={(event) =>
-                setOnlyDifferences(event.currentTarget.checked)}
-            />
-            <span aria-hidden="true" />
-            {copy.compatibility.differences}
-          </label>
-        </div>
-
         <div class="compatibility-table-wrap">
           <table class="compatibility-table">
             <thead>
@@ -210,137 +136,6 @@ function Compatibility({ copy }: { copy: typeof COPY[Locale] }) {
   );
 }
 
-function Security({ copy }: { copy: typeof COPY[Locale] }) {
-  const points = [
-    [copy.security.memory, copy.security.memoryBody],
-    [copy.security.storage, copy.security.storageBody],
-    [copy.security.audit, copy.security.auditBody],
-  ];
-  return (
-    <section class="section security-section" aria-labelledby="security-title">
-      <div class="shell">
-        <SectionHeading
-          eyebrow={copy.security.eyebrow}
-          title={copy.security.title}
-          id="security-title"
-        />
-        <div class="request-path" aria-label={copy.security.steps.join(" to ")}>
-          {copy.security.steps.map((step, index) => (
-            <div key={step}>
-              <span>0{index + 1}</span>
-              <b>{step}</b>
-              {index < copy.security.steps.length - 1 && <Icon name="arrow" />}
-            </div>
-          ))}
-        </div>
-        <div class="security-grid">
-          <p class="security-statement">{copy.security.body}</p>
-          <div class="security-points">
-            {points.map(([title, body], index) => (
-              <article key={title}>
-                <span>0{index + 1}</span>
-                <div>
-                  <h3>{title}</h3>
-                  <p>{body}</p>
-                </div>
-              </article>
-            ))}
-            <a
-              href={`${REPOSITORY_URL}/tree/master/routes`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {copy.security.source}
-              <Icon name="external" size={15} />
-            </a>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function QuickStart({ copy }: { copy: typeof COPY[Locale] }) {
-  const [sample, setSample] = useState<"sdk" | "curl">("sdk");
-  const code = sample === "sdk" ? SDK_SNIPPET : CURL_SNIPPET;
-  return (
-    <section
-      id="quickstart"
-      class="section quickstart-section"
-      aria-labelledby="quickstart-title"
-    >
-      <div class="shell">
-        <SectionHeading
-          eyebrow={copy.quickstart.eyebrow}
-          title={copy.quickstart.title}
-          body={copy.quickstart.intro}
-          id="quickstart-title"
-        />
-        <div class="quickstart-grid">
-          <div class="quickstart-steps">
-            <article>
-              <span>01</span>
-              <div>
-                <b>{copy.quickstart.sdk}</b>
-                <p>npm install openai</p>
-              </div>
-            </article>
-            <article>
-              <span>02</span>
-              <div>
-                <b>baseURL</b>
-                <p>https://your-gateway.example/v1</p>
-              </div>
-            </article>
-            <article>
-              <span>03</span>
-              <div>
-                <b>apiKey</b>
-                <p>process.env.AGNES_API_KEY</p>
-              </div>
-            </article>
-          </div>
-          <div class="code-workbench compact-code">
-            <div class="code-titlebar">
-              <span class="window-mark" aria-hidden="true" />
-              <span>quickstart.ts</span>
-              <div
-                class="code-mode"
-                role="group"
-                aria-label="Quick start language"
-              >
-                <button
-                  type="button"
-                  class={sample === "sdk" ? "active" : ""}
-                  onClick={() => setSample("sdk")}
-                >
-                  {copy.quickstart.sdk}
-                </button>
-                <button
-                  type="button"
-                  class={sample === "curl" ? "active" : ""}
-                  onClick={() => setSample("curl")}
-                >
-                  {copy.quickstart.curl}
-                </button>
-              </div>
-            </div>
-            <div class="code-body">
-              <CopyButton
-                value={code}
-                label={copy.hero.copy}
-                copiedLabel={copy.hero.copied}
-                class="code-copy"
-              />
-              <pre><code>{code}</code></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Deploy(
   { copy, locale }: { copy: typeof COPY[Locale]; locale: Locale },
 ) {
@@ -357,9 +152,9 @@ function Deploy(
         <div class="deploy-copy">
           <p class="eyebrow">DEPLOY YOUR WAY</p>
           <h2 id="deploy-title">{copy.nav.deploy}</h2>
-          <p>{copy.quickstart.dockerBody}</p>
+          <p>{copy.deploy.dockerBody}</p>
           <div class="env-line">
-            <span>{copy.quickstart.env}</span>
+            <span>{copy.deploy.env}</span>
             <code>AGNES_BASE_URL=https://apihub.agnes-ai.com/v1</code>
           </div>
           <a
@@ -367,7 +162,7 @@ function Deploy(
             target="_blank"
             rel="noreferrer"
           >
-            {copy.quickstart.deployLink}
+            {copy.deploy.deployLink}
             <Icon name="arrow" size={16} />
           </a>
         </div>
@@ -377,8 +172,8 @@ function Deploy(
               <span>01</span>
               <Icon name="code" />
             </header>
-            <h3>{copy.quickstart.docker}</h3>
-            <p>{copy.quickstart.dockerBody}</p>
+            <h3>{copy.deploy.docker}</h3>
+            <p>{copy.deploy.dockerBody}</p>
             <div class="inline-code">
               <code>{DOCKER_SNIPPET}</code>
               <CopyButton
@@ -393,8 +188,8 @@ function Deploy(
               <span>02</span>
               <Icon name="external" />
             </header>
-            <h3>{copy.quickstart.deno}</h3>
-            <p>{copy.quickstart.denoBody}</p>
+            <h3>{copy.deploy.deno}</h3>
+            <p>{copy.deploy.denoBody}</p>
             <a
               href="https://console.deno.com/"
               target="_blank"
@@ -468,8 +263,6 @@ export function InformationSections({ locale, copy }: SectionsProps) {
   return (
     <>
       <Compatibility copy={copy} />
-      <Security copy={copy} />
-      <QuickStart copy={copy} />
       <Deploy copy={copy} locale={locale} />
       <Troubleshooting copy={copy} />
       <Faq copy={copy} />
