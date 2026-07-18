@@ -102,6 +102,6 @@ scope 绝不输出错误正文值；其中 401 请求使用固定假 Token，不
 
 - [2026-07-18 M2 部分验收](contract-results/2026-07-18-m2.zh-CN.md)：Chat、
   SSE、工具、安全错误信封、图片 URL 输出和 Data URI 图片编辑已通过。文档规定的
-  `return_base64` 实际返回 URL，而 `extra_body.response_format: b64_json`
-  定向请求 成功返回 Base64。正式 scope 已切换到该映射，但复测遇到 `503`；M2
-  等待一次提交 后的成功运行。
+  `return_base64` 实际返回 URL；针对 `extra_body.response_format: b64_json` 的
+  定向请求成功返回 Base64。正式 scope 已切换到该映射，但两次复测均遇到 `503`；
+  M2 等待一次提交后的成功运行。

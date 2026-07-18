@@ -171,4 +171,4 @@ OpenAI 风格错误。
 [M2 证据](contract-results/2026-07-18-m2.zh-CN.md)确认了 Chat、错误、图片 URL 与
 Data URI 图片编辑信封。证据还记录了文档规定的 `return_base64` 请求实际返回 URL，
 而网关改用的 `extra_body.response_format: b64_json` 已成功返回 Base64；正式
-scope 复测随后遇到上游 `503`。
+scope 随后两次复测均遇到上游 `503`。
