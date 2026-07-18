@@ -194,6 +194,7 @@ shape has been verified.
 
 Dated, redacted upstream observations are recorded separately. The latest
 [M2 evidence](contract-results/2026-07-18-m2.md) confirms Chat, error, and Image
-URL and Data-URI image-edit envelopes. Text-to-image Base64 remains unresolved
-after a successful response lacked a valid `b64_json` and later diagnostics
-returned `503` and `504`.
+URL and Data-URI image-edit envelopes. It also records that documented
+`return_base64` requests returned URLs while the gateway's verified
+`extra_body.response_format: b64_json` mapping returned Base64. The formal scope
+rerun later encountered an upstream `503`.

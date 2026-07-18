@@ -169,5 +169,6 @@ OpenAI 风格错误。
 
 按日期记录的脱敏上游观察结果单独保存。最新的
 [M2 证据](contract-results/2026-07-18-m2.zh-CN.md)确认了 Chat、错误、图片 URL 与
-Data URI 图片编辑信封。文生图 Base64 在一次成功响应缺少有效 `b64_json`
-后，定向复测又返回 `503` 和 `504`，因此仍未解决。
+Data URI 图片编辑信封。证据还记录了文档规定的 `return_base64` 请求实际返回 URL，
+而网关改用的 `extra_body.response_format: b64_json` 已成功返回 Base64；正式
+scope 复测随后遇到上游 `503`。

@@ -101,6 +101,7 @@ scope 绝不输出错误正文值；其中 401 请求使用固定假 Token，不
 ## 已记录证据
 
 - [2026-07-18 M2 部分验收](contract-results/2026-07-18-m2.zh-CN.md)：Chat、
-  SSE、工具、安全错误信封、图片 URL 输出和 Data URI 图片编辑已通过。文生图
-  Base64 先出现 `200` 但无有效 `b64_json`，后续又返回 `503` 和 `504`；它是 M2
-  当前唯一未完成项。
+  SSE、工具、安全错误信封、图片 URL 输出和 Data URI 图片编辑已通过。文档规定的
+  `return_base64` 实际返回 URL，而 `extra_body.response_format: b64_json`
+  定向请求 成功返回 Base64。正式 scope 已切换到该映射，但复测遇到 `503`；M2
+  等待一次提交 后的成功运行。
