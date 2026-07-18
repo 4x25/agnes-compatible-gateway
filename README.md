@@ -154,14 +154,14 @@ See [Security Policy](SECURITY.md) for reporting vulnerabilities and
 Status is updated when the corresponding acceptance evidence exists; a source
 change by itself does not mark a milestone complete.
 
-| Milestone                               | Status                   | Evidence / completion criterion                                                                                                      |
-| --------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| M0 — Feasibility and protocol decisions | ✅ Complete (2026-07-16) | [Research baseline and compatibility decisions](docs/compatibility.md)                                                               |
-| M1 — Runtime and core foundation        | 🚧 In progress           | Local Deno 2.5.6/2.9.3 frozen acceptance passes; the first [Docker CI smoke](.github/workflows/ci.yml) remains                       |
-| M2 — Chat and Images                    | 🚧 In progress           | Mock and official SDK checks pass; gated live Agnes Chat/Image [contract probes](docs/contract-testing.md) remain                    |
-| M3 — Video lifecycle                    | 🚧 In progress           | Mock create/retrieve/content/Range checks pass; a gated real Agnes task must still complete and poll                                 |
-| M4 — Home page and API playground       | ✅ Complete (2026-07-16) | [Full Chromium/CDP acceptance](docs/browser-testing.md) covers both languages, five playground workflows, all six routes, and safety |
-| M5 — Community-ready release            | 🚧 In progress           | Bilingual docs and workflows are ready; Deno Deploy Preview, multi-arch GHCR publish, and `v0.1.0` acceptance remain                 |
+| Milestone                               | Status                   | Evidence / completion criterion                                                                                                          |
+| --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 — Feasibility and protocol decisions | ✅ Complete (2026-07-16) | [Research baseline and compatibility decisions](docs/compatibility.md)                                                                   |
+| M1 — Runtime and core foundation        | ✅ Complete (2026-07-17) | [CI acceptance](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) passed Deno 2.5.6/2.9.3, Docker, and Chromium |
+| M2 — Chat and Images                    | 🚧 In progress           | Mock and official SDK checks pass; gated live Agnes Chat/Image [contract probes](docs/contract-testing.md) remain                        |
+| M3 — Video lifecycle                    | 🚧 In progress           | Mock create/retrieve/content/Range checks pass; a gated real Agnes task must still complete and poll                                     |
+| M4 — Home page and API playground       | ✅ Complete (2026-07-16) | [Full Chromium/CDP acceptance](docs/browser-testing.md) covers both languages, five playground workflows, all six routes, and safety     |
+| M5 — Community-ready release            | 🚧 In progress           | Bilingual docs and workflows are ready; Deno Deploy Preview, multi-arch GHCR publish, and `v0.1.0` acceptance remain                     |
 
 ### Local acceptance snapshot — 2026-07-16
 
@@ -178,10 +178,20 @@ change by itself does not mark a milestone complete.
 - `deno task test:live` fails closed unless both explicit safety gates are set;
   no real Agnes request was made during this acceptance run.
 
-External acceptance is intentionally still open: this host has no Docker
-runtime, so the checked-in Docker smoke job has not run here; a real Agnes key
-is required for M2/M3 contract evidence; and M5 requires a Deno Deploy Preview,
-successful GHCR multi-architecture publication, and the `v0.1.0` release.
+### CI acceptance snapshot — 2026-07-17
+
+- [Run 29562152663](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663)
+  passed frozen install, formatting, lint, type-checking, all tests, and the
+  production build on Deno 2.5.6 and 2.9.3.
+- The same run built the production Docker image and verified `/healthz` from a
+  read-only, non-root container with dropped capabilities.
+- Its Chromium job repeated the bilingual, responsive, playground, and
+  credential-safety acceptance on GitHub-hosted infrastructure.
+
+External acceptance remains open where it requires billable or deployment
+resources: M2/M3 need real Agnes contract evidence, while M5 needs a Deno Deploy
+Preview, a successful GHCR multi-architecture publication, and the `v0.1.0`
+release.
 
 ## Documentation
 

@@ -144,14 +144,14 @@ credentials。错误统一为 OpenAI 风格的
 
 只有对应验收证据存在时才更新状态；仅完成代码修改不等于里程碑完成。
 
-| 里程碑                | 状态                    | 证据 / 完成标准                                                                                  |
-| --------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                |
-| M1 — 运行时与核心基础 | 🚧 进行中               | Deno 2.5.6/2.9.3 本地 frozen 验收已通过；仍需首次 [Docker CI 冒烟](.github/workflows/ci.yml)     |
-| M2 — Chat 与 Images   | 🚧 进行中               | Mock 与官方 SDK 检查已通过；仍需受控 Agnes Chat/Image [契约探测](docs/contract-testing.zh-CN.md) |
-| M3 — Video 闭环       | 🚧 进行中               | Mock 创建、查询、内容下载与 Range 已通过；仍需真实 Agnes 任务完成并轮询                          |
-| M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查 |
-| M5 — 开源发布就绪     | 🚧 进行中               | 双语文档与工作流已就绪；仍需 Deno Deploy Preview、多架构 GHCR 发布和 `v0.1.0` 验收               |
+| 里程碑                | 状态                    | 证据 / 完成标准                                                                                                                  |
+| --------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                                                |
+| M1 — 运行时与核心基础 | ✅ 已完成（2026-07-17） | [CI 验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) 已通过 Deno 2.5.6/2.9.3、Docker 与 Chromium |
+| M2 — Chat 与 Images   | 🚧 进行中               | Mock 与官方 SDK 检查已通过；仍需受控 Agnes Chat/Image [契约探测](docs/contract-testing.zh-CN.md)                                 |
+| M3 — Video 闭环       | 🚧 进行中               | Mock 创建、查询、内容下载与 Range 已通过；仍需真实 Agnes 任务完成并轮询                                                          |
+| M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查                                 |
+| M5 — 开源发布就绪     | 🚧 进行中               | 双语文档与工作流已就绪；仍需 Deno Deploy Preview、多架构 GHCR 发布和 `v0.1.0` 验收                                               |
 
 ### 本地验收快照 — 2026-07-16
 
@@ -166,9 +166,18 @@ credentials。错误统一为 OpenAI 风格的
 - `deno task test:live` 在两个显式安全开关未同时设置时会按设计失败关闭；
   本次验收未发出任何真实 Agnes 请求。
 
-外部验收仍有意保持未完成：当前主机没有 Docker 运行时，因此仓库中的 Docker
-冒烟任务尚未在本机执行；M2/M3 的契约证据需要真实 Agnes 测试 Key；M5 还需要
-`Deno Deploy Preview`、GHCR 多架构发布成功及 `v0.1.0` 正式发布。
+### CI 验收快照 — 2026-07-17
+
+- [运行 29562152663](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663)
+  在 Deno 2.5.6 与 2.9.3 上完成 frozen 安装、格式、lint、类型检查、全部测试及
+  生产构建。
+- 同一次运行构建了生产 Docker 镜像，并在只读、非 root、移除 capabilities 的
+  容器中验证 `/healthz`。
+- Chromium 任务在 GitHub 托管环境中重复验证了双语、响应式、在线测试台及凭据
+  安全验收。
+
+仍需付费或部署资源的外部验收保持未完成：M2/M3 需要真实 Agnes 契约证据；M5 需要
+Deno Deploy Preview、GHCR 多架构发布成功及 `v0.1.0` 正式发布。
 
 ## 文档
 
