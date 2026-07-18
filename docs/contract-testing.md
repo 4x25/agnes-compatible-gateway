@@ -117,5 +117,6 @@ redacted result from the corresponding milestone.
 
 - [2026-07-18 M2 partial acceptance](contract-results/2026-07-18-m2.md): Chat,
   SSE, tools, safe error envelopes, and Image URL output passed. Text-to-image
-  Base64 remains unresolved after a `200` without a valid `b64_json` and a later
-  `503`; image editing was not run, so M2 remains open.
+  Base64 remains unresolved after a `200` without a valid `b64_json`, followed
+  by `503` and `504` responses. Data-URI image editing passed, so only
+  text-to-image Base64 keeps M2 open.
