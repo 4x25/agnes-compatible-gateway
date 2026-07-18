@@ -69,14 +69,15 @@ HTTP 参考。
 
 `POST /v1/images/generations`
 
-| 分类       | 字段与行为                                                                                                                                                  |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 透传       | `model`、`prompt` 与调用方传入的 `size`                                                                                                                     |
-| 转换       | 缺省 `size` → `1024x1024`；生成接口的 `response_format: b64_json` → Agnes `return_base64: true`；`response_format: url` → `extra_body.response_format: url` |
-| 转换       | `n`（`1`–`10`）→ 并发发起对应数量的 Agnes 请求，并删除上游 `n`；结果保持发起顺序                                                                            |
-| 部分兼容   | Agnes 可能将精确像素尺寸标准化为受支持的档位/比例，应以响应元数据为准。                                                                                     |
-| Agnes 扩展 | `ratio`、`return_base64` 以及文档确认的 `extra_body.image`/`extra_body.response_format`。未知 `extra_body` 成员作为扩展透传，不具备可移植性。               |
-| 丢弃       | Agnes 无法表示的 `background`、`quality`、`style`、`moderation`、`output_compression`、`partial_images`、`stream`、`user` 等 OpenAI 控制项                  |
+| 分类       | 字段与行为                                                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 透传       | `model`、`prompt` 与调用方传入的 `size`                                                                                                       |
+| 转换       | 缺省 `size` → `1024x1024`；生成接口的 `response_format: url` → Agnes `extra_body.response_format: url`                                        |
+| 部分兼容   | 生成接口的 `response_format: b64_json` → 文档规定的 Agnes `return_base64: true`；2026-07-18 实时结果尚未确认稳定的 `b64_json` 响应            |
+| 转换       | `n`（`1`–`10`）→ 并发发起对应数量的 Agnes 请求，并删除上游 `n`；结果保持发起顺序                                                              |
+| 部分兼容   | Agnes 可能将精确像素尺寸标准化为受支持的档位/比例，应以响应元数据为准。                                                                       |
+| Agnes 扩展 | `ratio`、`return_base64` 以及文档确认的 `extra_body.image`/`extra_body.response_format`。未知 `extra_body` 成员作为扩展透传，不具备可移植性。 |
+| 丢弃       | Agnes 无法表示的 `background`、`quality`、`style`、`moderation`、`output_compression`、`partial_images`、`stream`、`user` 等 OpenAI 控制项    |
 
 扇出是原子的：任一上游请求失败时，只返回一个错误，不返回部分 `data`，也不
 重试成功或失败分支。聚合响应上限为 64 MiB。
@@ -168,5 +169,6 @@ OpenAI 风格错误。
 未经 Agnes 文档确认的格式已通过真实验证。
 
 按日期记录的脱敏上游观察结果单独保存。最新的
-[M2 证据](contract-results/2026-07-18-m2.zh-CN.md)确认了 Chat 与错误信封；由于
-首个图片请求以上游 `503` 结束，不对图片契约作出结论。
+[M2 证据](contract-results/2026-07-18-m2.zh-CN.md)确认了 Chat、错误与图片 URL
+信封。文生图 Base64 在一次成功响应缺少有效 `b64_json` 后，定向复测又返回
+`503`，因此仍未解决；图片编辑尚未运行。

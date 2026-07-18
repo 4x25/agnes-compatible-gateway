@@ -82,7 +82,8 @@ tool-result message contract.
 | Classification  | Fields and behavior                                                                                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Pass-through    | `model`, `prompt`, and a caller-supplied `size`                                                                                                                                      |
-| Translated      | Missing `size` → `1024x1024`; generation `response_format: b64_json` → Agnes `return_base64: true`; generation `response_format: url` → `extra_body.response_format: url`            |
+| Translated      | Missing `size` → `1024x1024`; generation `response_format: url` → Agnes `extra_body.response_format: url`                                                                            |
+| Partial         | Generation `response_format: b64_json` → documented Agnes `return_base64: true`; the 2026-07-18 live result did not yet confirm a stable `b64_json` response                         |
 | Translated      | `n` (`1`–`10`) → that many concurrent Agnes requests, with upstream `n` removed; results retain request order                                                                        |
 | Partial         | Exact pixel dimensions can be normalized by Agnes to a supported size tier/ratio. Returned metadata is authoritative.                                                                |
 | Agnes extension | `ratio`, `return_base64`, and the documented `extra_body.image`/`extra_body.response_format` controls. Unknown `extra_body` members are extension pass-through and are not portable. |
@@ -192,6 +193,7 @@ process. A successful mocked test does not claim that an undocumented Agnes
 shape has been verified.
 
 Dated, redacted upstream observations are recorded separately. The latest
-[M2 evidence](contract-results/2026-07-18-m2.md) confirms Chat and error
-envelopes but makes no Image-contract claim because the first Image request
-ended with an upstream `503`.
+[M2 evidence](contract-results/2026-07-18-m2.md) confirms Chat, error, and Image
+URL envelopes. Text-to-image Base64 remains unresolved after a successful
+response lacked a valid `b64_json` and a diagnostic follow-up returned `503`;
+image editing was not run.

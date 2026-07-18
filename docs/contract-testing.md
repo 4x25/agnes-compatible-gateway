@@ -116,5 +116,6 @@ redacted result from the corresponding milestone.
 ## Recorded evidence
 
 - [2026-07-18 M2 partial acceptance](contract-results/2026-07-18-m2.md): Chat,
-  SSE, tools, and safe error envelopes passed; the first Image probe returned an
-  upstream `503`, so later Image probes were not run and M2 remains open.
+  SSE, tools, safe error envelopes, and Image URL output passed. Text-to-image
+  Base64 remains unresolved after a `200` without a valid `b64_json` and a later
+  `503`; image editing was not run, so M2 remains open.

@@ -465,12 +465,16 @@ async function probeImageBase64(): Promise<void> {
     ratio: "1:1",
     return_base64: true,
   });
+  // Record the bounded field/type shape before asserting the documented output
+  // field. If Agnes accepts the request but ignores `return_base64`, maintainers
+  // can distinguish that contract drift from an HTTP or parsing failure without
+  // logging the returned URL or any Base64 payload.
+  recordShape("image-base64", result.response, result.body);
   const item = firstImage(result.body);
   expectString(
     item.b64_json,
     "Image Base64 response must contain data[0].b64_json.",
   );
-  recordShape("image-base64", result.response, result.body);
 }
 
 async function probeImageEdit(): Promise<void> {
@@ -484,12 +488,14 @@ async function probeImageEdit(): Promise<void> {
       response_format: "b64_json",
     },
   });
+  // Keep the same failure diagnostics for the separately documented img2img
+  // Base64 control while ensuring response values never enter test output.
+  recordShape("image-edit", result.response, result.body);
   const item = firstImage(result.body);
   expectString(
     item.b64_json,
     "Image-edit response must contain data[0].b64_json.",
   );
-  recordShape("image-edit", result.response, result.body);
 }
 
 async function probeVideo(): Promise<void> {
