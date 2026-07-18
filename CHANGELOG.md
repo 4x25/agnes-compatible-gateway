@@ -49,6 +49,13 @@ All notable changes to this project are documented here. The format follows
   normalized without cutting off healthy SSE or media streams after headers.
 - Image fan-out failure paths safely cancel every unread response body without
   masking the primary upstream, parsing, shape, or aggregate-size error.
+- Multi-architecture releases build Fresh once on the native BuildKit worker and
+  copy the self-contained bundle into each target runtime. This avoids
+  unreliable Deno/Vite module resolution under QEMU while also removing source,
+  tests, build tools, and dependency caches from the production image.
+- The release workflow now inspects the published manifest for both supported
+  architectures and health-checks the immutable registry digest before it can
+  report success.
 
 ### Security
 

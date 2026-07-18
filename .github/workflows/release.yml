@@ -53,6 +53,7 @@ jobs:
             org.opencontainers.image.licenses=MIT
 
       - name: Build and publish image, SBOM, and provenance
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -66,3 +67,45 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
+
+      - name: Verify published architectures and container health
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          manifest="$(docker buildx imagetools inspect --raw "$IMAGE@$DIGEST")"
+          jq --exit-status '
+            [.manifests[].platform
+              | select(.os == "linux")
+              | .architecture]
+            | (index("amd64") != null and index("arm64") != null)
+          ' <<<"$manifest" >/dev/null
+
+          docker pull --platform linux/amd64 "$IMAGE@$DIGEST"
+          docker run --detach --name gateway-release-smoke \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --publish 127.0.0.1:18000:8000 \
+            "$IMAGE@$DIGEST"
+
+          cleanup() {
+            docker logs gateway-release-smoke || true
+            docker rm --force gateway-release-smoke || true
+          }
+          trap cleanup EXIT
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:18000/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Published container did not become healthy" >&2
+          exit 1
