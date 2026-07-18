@@ -104,3 +104,5 @@ scope 绝不输出错误正文值；其中 401 请求使用固定假 Token，不
   工具、安全错误信封、图片 URL/Base64 输出和 Data URI 图片编辑全部通过。文档规定
   的 `return_base64` 实际返回 URL，因此已提交的网关与实时 scope 均改用验证通过的
   `extra_body.response_format: b64_json` 映射。
+- [2026-07-18 M3 验收](contract-results/2026-07-18-m3.zh-CN.md)：真实视频创建、
+  video-ID 终态轮询、成品媒体解析以及不携带凭据的字节范围请求全部通过。

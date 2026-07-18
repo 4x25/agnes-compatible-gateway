@@ -120,3 +120,6 @@ redacted result from the corresponding milestone.
   passed. The documented `return_base64` control returned URLs, so the committed
   gateway and live scope now use the verified
   `extra_body.response_format: b64_json` mapping.
+- [2026-07-18 M3 acceptance](contract-results/2026-07-18-m3.md): real video
+  creation, video-ID terminal polling, completed media resolution, and a
+  credential-free byte-range request all passed.

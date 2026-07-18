@@ -149,7 +149,7 @@ credentials。错误统一为 OpenAI 风格的
 | M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                                                |
 | M1 — 运行时与核心基础 | ✅ 已完成（2026-07-17） | [CI 验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) 已通过 Deno 2.5.6/2.9.3、Docker 与 Chromium |
 | M2 — Chat 与 Images   | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m2.zh-CN.md) 已覆盖 Chat、错误、图片 URL/Base64 与 Data URI 编辑                 |
-| M3 — Video 闭环       | 🚧 进行中               | Mock 创建、查询、内容下载与 Range 已通过；仍需真实 Agnes 任务完成并轮询                                                          |
+| M3 — Video 闭环       | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m3.zh-CN.md) 已覆盖真实创建、video-ID 轮询与 Range 内容下载                      |
 | M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查                                 |
 | M5 — 开源发布就绪     | 🚧 进行中               | 双语文档与工作流已就绪；仍需 Deno Deploy Preview、多架构 GHCR 发布和 `v0.1.0` 验收                                               |
 
@@ -176,8 +176,8 @@ credentials。错误统一为 OpenAI 风格的
 - Chromium 任务在 GitHub 托管环境中重复验证了双语、响应式、在线测试台及凭据
   安全验收。
 
-仍需付费或部署资源的外部验收保持未完成。M3 需要真实 Agnes 视频闭环。M5 需要 Deno
-Deploy Preview、GHCR 多架构发布成功及 `v0.1.0` 正式发布。
+现在仅 M5 仍需外部验收：Deno Deploy Preview、GHCR 多架构发布成功及 `v0.1.0`
+正式发布。
 
 ## 文档
 

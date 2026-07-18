@@ -196,10 +196,12 @@ See [contract testing](contract-testing.md) for the opt-in live verification
 process. A successful mocked test does not claim that an undocumented Agnes
 shape has been verified.
 
-Dated, redacted upstream observations are recorded separately. The latest
+Dated, redacted upstream observations are recorded separately. The
 [M2 evidence](contract-results/2026-07-18-m2.md) confirms Chat, error, and Image
 URL and Data-URI image-edit envelopes. It also records that documented
 `return_base64` requests returned URLs while the gateway's verified
 `extra_body.response_format: b64_json` mapping returned Base64. After two
 transient `503` responses, the formal committed scope also passed with that
-mapping, completing M2 contract acceptance.
+mapping, completing M2 contract acceptance. The latest
+[M3 evidence](contract-results/2026-07-18-m3.md) confirms real video creation,
+video-ID terminal polling, completed media resolution, and byte-range download.

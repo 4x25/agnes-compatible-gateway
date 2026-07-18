@@ -159,7 +159,7 @@ change by itself does not mark a milestone complete.
 | M0 — Feasibility and protocol decisions | ✅ Complete (2026-07-16) | [Research baseline and compatibility decisions](docs/compatibility.md)                                                                   |
 | M1 — Runtime and core foundation        | ✅ Complete (2026-07-17) | [CI acceptance](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) passed Deno 2.5.6/2.9.3, Docker, and Chromium |
 | M2 — Chat and Images                    | ✅ Complete (2026-07-18) | [Live contract acceptance](docs/contract-results/2026-07-18-m2.md) covers Chat, errors, Image URL/Base64, and Data-URI editing           |
-| M3 — Video lifecycle                    | 🚧 In progress           | Mock create/retrieve/content/Range checks pass; a gated real Agnes task must still complete and poll                                     |
+| M3 — Video lifecycle                    | ✅ Complete (2026-07-18) | [Live contract acceptance](docs/contract-results/2026-07-18-m3.md) covers real creation, video-ID polling, and Range content download    |
 | M4 — Home page and API playground       | ✅ Complete (2026-07-16) | [Full Chromium/CDP acceptance](docs/browser-testing.md) covers both languages, five playground workflows, all six routes, and safety     |
 | M5 — Community-ready release            | 🚧 In progress           | Bilingual docs and workflows are ready; Deno Deploy Preview, multi-arch GHCR publish, and `v0.1.0` acceptance remain                     |
 
@@ -188,10 +188,8 @@ change by itself does not mark a milestone complete.
 - Its Chromium job repeated the bilingual, responsive, playground, and
   credential-safety acceptance on GitHub-hosted infrastructure.
 
-External acceptance remains open where it requires billable or deployment
-resources: M3 needs a real Agnes video lifecycle, and M5 needs a Deno Deploy
-Preview, a successful GHCR multi-architecture publication, and the `v0.1.0`
-release.
+External acceptance remains open only for M5: it needs a Deno Deploy Preview, a
+successful GHCR multi-architecture publication, and the `v0.1.0` release.
 
 ## Documentation
 
