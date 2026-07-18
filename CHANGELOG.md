@@ -36,6 +36,9 @@ All notable changes to this project are documented here. The format follows
   remain partially compatible pass-through controls.
 - Standard image `response_format` takes precedence over Agnes
   `return_base64`/`extra_body.response_format`, with overridden paths reported.
+- Standard image `response_format: b64_json` now uses the live-verified Agnes
+  `extra_body.response_format` control after contract probes showed the
+  documented `return_base64` control could still return a URL.
 - The OpenAPI contract names each supported Agnes extension and mirrors the
   runtime CORS request-header allowlist.
 - Upstream response-header waits are bounded, and client cancellation is

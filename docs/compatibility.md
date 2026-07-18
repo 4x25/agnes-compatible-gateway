@@ -196,5 +196,6 @@ Dated, redacted upstream observations are recorded separately. The latest
 [M2 evidence](contract-results/2026-07-18-m2.md) confirms Chat, error, and Image
 URL and Data-URI image-edit envelopes. It also records that documented
 `return_base64` requests returned URLs while the gateway's verified
-`extra_body.response_format: b64_json` mapping returned Base64. Both later
-formal-scope reruns encountered upstream `503` responses.
+`extra_body.response_format: b64_json` mapping returned Base64. After two
+transient `503` responses, the formal committed scope also passed with that
+mapping, completing M2 contract acceptance.

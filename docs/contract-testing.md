@@ -115,9 +115,8 @@ redacted result from the corresponding milestone.
 
 ## Recorded evidence
 
-- [2026-07-18 M2 partial acceptance](contract-results/2026-07-18-m2.md): Chat,
-  SSE, tools, safe error envelopes, Image URL output, and Data-URI editing
-  passed. The documented `return_base64` control returned URLs, while a targeted
-  `extra_body.response_format: b64_json` request returned Base64. The committed
-  scope now uses that verified mapping but both reruns hit `503`, so M2 remains
-  open pending one successful committed run.
+- [2026-07-18 M2 acceptance](contract-results/2026-07-18-m2.md): Chat, SSE,
+  tools, safe error envelopes, Image URL/Base64 output, and Data-URI editing all
+  passed. The documented `return_base64` control returned URLs, so the committed
+  gateway and live scope now use the verified
+  `extra_body.response_format: b64_json` mapping.
