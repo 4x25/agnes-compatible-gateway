@@ -190,3 +190,8 @@ resolve to the video content.
 See [contract testing](contract-testing.md) for the opt-in live verification
 process. A successful mocked test does not claim that an undocumented Agnes
 shape has been verified.
+
+Dated, redacted upstream observations are recorded separately. The latest
+[M2 evidence](contract-results/2026-07-18-m2.md) confirms Chat and error
+envelopes but makes no Image-contract claim because the first Image request
+ended with an upstream `503`.

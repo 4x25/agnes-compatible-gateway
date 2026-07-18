@@ -112,3 +112,9 @@ header names, redacted request ID, and field/type shape.
 Do not make live tests part of ordinary CI or fork pull-request workflows. A
 maintainer may run them manually in a protected environment and link only a
 redacted result from the corresponding milestone.
+
+## Recorded evidence
+
+- [2026-07-18 M2 partial acceptance](contract-results/2026-07-18-m2.md): Chat,
+  SSE, tools, and safe error envelopes passed; the first Image probe returned an
+  upstream `503`, so later Image probes were not run and M2 remains open.
