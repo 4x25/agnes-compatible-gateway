@@ -710,10 +710,9 @@ components:
           type: string
           enum: [url, b64_json]
           description: |
-            Standard OpenAI field. For generation, `b64_json` maps to
-            `return_base64: true` and `url` maps to
-            `extra_body.response_format: url`; for edits, both values map to
-            `extra_body.response_format`. It overrides both extension forms.
+            Standard OpenAI field. Both values map to Agnes
+            `extra_body.response_format` for generations and edits. It
+            overrides both extension forms.
         ratio:
           type: string
           description: |
@@ -722,8 +721,9 @@ components:
         return_base64:
           type: boolean
           description: |
-            Agnes text-to-image extension. Used only when standard
-            `response_format` is absent; otherwise removed and reported.
+            Direct Agnes text-to-image extension. Passed through only when
+            standard `response_format` is absent; otherwise removed and
+            reported. Portable clients should use `response_format`.
         extra_body:
           $ref: "#/components/schemas/ImageExtraBody"
       additionalProperties: true

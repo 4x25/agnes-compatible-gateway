@@ -82,8 +82,7 @@ tool-result message contract.
 | Classification  | Fields and behavior                                                                                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Pass-through    | `model`, `prompt`, and a caller-supplied `size`                                                                                                                                      |
-| Translated      | Missing `size` → `1024x1024`; generation `response_format: url` → Agnes `extra_body.response_format: url`                                                                            |
-| Partial         | Generation `response_format: b64_json` → documented Agnes `return_base64: true`; the 2026-07-18 live result did not yet confirm a stable `b64_json` response                         |
+| Translated      | Missing `size` → `1024x1024`; generation `response_format: url` or `response_format: b64_json` → Agnes `extra_body.response_format`                                                  |
 | Translated      | `n` (`1`–`10`) → that many concurrent Agnes requests, with upstream `n` removed; results retain request order                                                                        |
 | Partial         | Exact pixel dimensions can be normalized by Agnes to a supported size tier/ratio. Returned metadata is authoritative.                                                                |
 | Agnes extension | `ratio`, `return_base64`, and the documented `extra_body.image`/`extra_body.response_format` controls. Unknown `extra_body` members are extension pass-through and are not portable. |
@@ -94,10 +93,11 @@ and no partial `data` array. It does not retry successful or failed branches.
 The aggregate response is capped at 64 MiB.
 
 `return_base64` is accepted only as a direct Agnes extension when the standard
-`response_format` is absent. If `response_format` is supplied, it always wins:
-the gateway removes `return_base64` and any conflicting
-`extra_body.response_format`, then reports each removed path even when its value
-agrees. Portable OpenAI clients should therefore prefer `response_format`.
+`response_format` is absent. A live probe observed Agnes accept that documented
+control while returning a URL, so the standard `b64_json` mapping instead uses
+the verified `extra_body.response_format`. If `response_format` is supplied, it
+always wins: the gateway removes `return_base64` and any conflicting extension
+format, then reports each removed path even when its value agrees.
 
 ## Image edits
 

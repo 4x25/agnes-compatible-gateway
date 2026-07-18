@@ -463,12 +463,11 @@ async function probeImageBase64(): Promise<void> {
     prompt: "A simple green square centered on a plain white background.",
     size: "1K",
     ratio: "1:1",
-    return_base64: true,
+    extra_body: { response_format: "b64_json" },
   });
   // Record the bounded field/type shape before asserting the documented output
-  // field. If Agnes accepts the request but ignores `return_base64`, maintainers
-  // can distinguish that contract drift from an HTTP or parsing failure without
-  // logging the returned URL or any Base64 payload.
+  // field. Maintainers can distinguish contract drift from an HTTP or parsing
+  // failure without logging the returned URL or any Base64 payload.
   recordShape("image-base64", result.response, result.body);
   const item = firstImage(result.body);
   expectString(

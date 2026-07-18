@@ -72,8 +72,7 @@ HTTP 参考。
 | 分类       | 字段与行为                                                                                                                                    |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | 透传       | `model`、`prompt` 与调用方传入的 `size`                                                                                                       |
-| 转换       | 缺省 `size` → `1024x1024`；生成接口的 `response_format: url` → Agnes `extra_body.response_format: url`                                        |
-| 部分兼容   | 生成接口的 `response_format: b64_json` → 文档规定的 Agnes `return_base64: true`；2026-07-18 实时结果尚未确认稳定的 `b64_json` 响应            |
+| 转换       | 缺省 `size` → `1024x1024`；生成接口的 `response_format: url` 或 `response_format: b64_json` → Agnes `extra_body.response_format`              |
 | 转换       | `n`（`1`–`10`）→ 并发发起对应数量的 Agnes 请求，并删除上游 `n`；结果保持发起顺序                                                              |
 | 部分兼容   | Agnes 可能将精确像素尺寸标准化为受支持的档位/比例，应以响应元数据为准。                                                                       |
 | Agnes 扩展 | `ratio`、`return_base64` 以及文档确认的 `extra_body.image`/`extra_body.response_format`。未知 `extra_body` 成员作为扩展透传，不具备可移植性。 |
@@ -83,9 +82,9 @@ HTTP 参考。
 重试成功或失败分支。聚合响应上限为 64 MiB。
 
 仅当标准 `response_format` 缺失时，才直接接受 Agnes 原生扩展
-`return_base64`。一旦提供 `response_format`，标准字段始终优先：网关会删除
-`return_base64` 及冲突的 `extra_body.response_format`，即便值相同也逐项报告。
-因此，可移植的 OpenAI 客户端应优先使用 `response_format`。
+`return_base64`。实时探测曾观察到 Agnes 接受该文档控制却仍返回 URL，因此标准
+`b64_json` 改用已验证的 `extra_body.response_format`。一旦提供标准字段，网关会
+删除 `return_base64` 及冲突的扩展格式，即便值相同也逐项报告。
 
 ## 图像编辑
 

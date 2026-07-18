@@ -100,12 +100,12 @@ export function transformImageRequest(
     if (extraBody.response_format !== undefined) {
       ignored.add("extra_body.response_format");
     }
-    if (operation === "generation" && responseFormat === "b64_json") {
-      body.return_base64 = true;
-      delete extraBody.response_format;
-    } else {
-      extraBody.response_format = responseFormat;
-    }
+    // Agnes documents `return_base64` for text-to-image, but live contract
+    // probes observed that it can be accepted while still returning a URL.
+    // `extra_body.response_format` produced the requested URL and Base64
+    // envelopes for both generation and editing, so use that verified control
+    // consistently for the standard OpenAI field.
+    extraBody.response_format = responseFormat;
   }
 
   if (Object.keys(extraBody).length > 0) body.extra_body = extraBody;

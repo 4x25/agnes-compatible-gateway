@@ -594,6 +594,7 @@ Deno.test("image n fans out concurrently and aggregates in request order", async
       n: 3,
       response_format: "b64_json",
       return_base64: false,
+      extra_body: { response_format: "url" },
       image: "https://unsupported-top-level.example/input.png",
       quality: "high",
     },
@@ -613,12 +614,12 @@ Deno.test("image n fans out concurrently and aggregates in request order", async
       model: "agnes-image-2.1-flash",
       prompt: "city",
       size: "1024x1024",
-      return_base64: true,
+      extra_body: { response_format: "b64_json" },
     });
   }
   assertEquals(
     response.headers.get("x-agnes-gateway-ignored-params"),
-    "image,quality,return_base64",
+    "extra_body.response_format,image,quality,return_base64",
   );
 });
 
