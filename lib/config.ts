@@ -39,6 +39,18 @@ export function joinBaseUrl(baseUrl: string, path: string): string {
   return `${baseUrl}/${path.replace(/^\/+/, "")}`;
 }
 
+/**
+ * Join an Agnes endpoint that is a sibling of the terminal `/v1` API prefix.
+ *
+ * Agnes exposes video polling at `/agnesapi` instead of below `/v1`. Preserve
+ * any reverse-proxy prefix before `/v1` (for example `/custom/v1` becomes
+ * `/custom/agnesapi`) so configured proxy deployments remain usable.
+ */
+export function joinApiRootUrl(baseUrl: string, path: string): string {
+  const versionRoot = baseUrl.replace(/\/v1$/i, "");
+  return new URL(path.replace(/^\/+/, ""), `${versionRoot}/`).toString();
+}
+
 function configuredBaseUrl(): string {
   try {
     return Deno.env.get("AGNES_BASE_URL") || DEFAULT_AGNES_BASE_URL;

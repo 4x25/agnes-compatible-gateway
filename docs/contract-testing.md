@@ -55,7 +55,7 @@ smallest probe. Available values are:
 | `image`        | One 1K URL-output text-to-image generation                                      |
 | `image-base64` | One 1K Base64-output text-to-image generation                                   |
 | `image-edit`   | One 1K Data-URI image-to-image generation with Base64 output                    |
-| `video`        | One minimal 9-frame Data-URI image-to-video task plus task-ID retrieval         |
+| `video`        | One minimal 9-frame Data-URI image-to-video task plus video-ID retrieval        |
 | `all`          | Every probe above; must be used by itself                                       |
 
 For example, explicitly run the two currently ambiguous image contracts:
@@ -83,7 +83,7 @@ Use a disposable, least-privilege account and rotate/revoke the key after a
 probe. Live tests can create billable text, image, or video work; review current
 Agnes pricing and quota before running them. Generation calls are never retried.
 The video probe retries only a transient `404` while reading the newly created
-task.
+video ID through the documented `/agnesapi` endpoint.
 
 ## Coverage and manual checklist
 

@@ -226,10 +226,10 @@ export class AgnesOpenAIGateway {
     return this.handle(request, async (context) => {
       const authorization = requireBearerAuthorization(request);
       validateVideoId(videoId);
-      const upstream = await this.client.request(
-        `videos/${encodeURIComponent(videoId)}`,
+      const upstream = await this.requestVideoMetadata(
+        videoId,
         authorization,
-        { signal: request.signal },
+        request.signal,
       );
       await ensureUpstreamOk(upstream);
       const metadata = normalizeVideoMetadata(
@@ -255,10 +255,10 @@ export class AgnesOpenAIGateway {
         }
       }
 
-      const metadataResponse = await this.client.request(
-        `videos/${encodeURIComponent(videoId)}`,
+      const metadataResponse = await this.requestVideoMetadata(
+        videoId,
         authorization,
-        { signal: request.signal },
+        request.signal,
       );
       await ensureUpstreamOk(metadataResponse);
       const metadata = await readUpstreamJson(
@@ -310,6 +310,38 @@ export class AgnesOpenAIGateway {
       }
       return streamingResponse(media, context, { media: true });
     });
+  }
+
+  /**
+   * Query the documented video-ID endpoint without storing an ID map.
+   *
+   * Gateways released before the live contract check exposed Agnes task IDs as
+   * their public IDs. A bounded read-only fallback on 400/404 keeps those IDs
+   * usable while all newly-created responses prefer the documented video ID.
+   */
+  private async requestVideoMetadata(
+    videoId: string,
+    authorization: string,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const recommended = await this.client.requestApiRoot(
+      `agnesapi?video_id=${encodeURIComponent(videoId)}`,
+      authorization,
+      { signal },
+    );
+    if (
+      recommended.ok ||
+      (recommended.status !== 400 && recommended.status !== 404)
+    ) {
+      return recommended;
+    }
+
+    await cancelResponseBody(recommended);
+    return await this.client.request(
+      `videos/${encodeURIComponent(videoId)}`,
+      authorization,
+      { signal },
+    );
   }
 
   private async executeImages(
@@ -523,15 +555,16 @@ async function readUpstreamJson(
 }
 
 function normalizeVideoMetadata(input: JsonObject): JsonObject {
-  const id = typeof input.task_id === "string" && input.task_id
-    ? input.task_id
+  const id = typeof input.video_id === "string" && input.video_id
+    ? input.video_id
     : typeof input.id === "string" && input.id
     ? input.id
-    : typeof input.video_id === "string" && input.video_id
-    ? input.video_id
+    : typeof input.task_id === "string" && input.task_id
+    ? input.task_id
     : null;
-  // Prefer task_id even when Agnes also supplies a different video_id/id: the
-  // public ID must remain retrievable through the stateless legacy task route.
+  // Prefer video_id so the public ID is directly retrievable through Agnes's
+  // documented stateless query endpoint. Keep task_id and the original fields
+  // as Agnes extensions for diagnostics and backward compatibility.
   return id && input.id !== id ? { ...input, id } : input;
 }
 

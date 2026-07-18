@@ -143,11 +143,13 @@ asynchronous; the creation call returns task metadata rather than media bytes.
 
 ## Video retrieval and content
 
-`GET /v1/videos/{video_id}` treats the public path value as the Agnes
-`task_id`/`id` returned by creation and queries Agnes's legacy
-`/videos/{task_id}` endpoint. This choice keeps the gateway stateless. The Agnes
-`video_id`, final `url`, progress, normalized size, and normalized duration
-remain visible as extensions in the response.
+`GET /v1/videos/{video_id}` treats the public path value as the Agnes `video_id`
+returned by creation and queries the documented stateless `/agnesapi?video_id=…`
+endpoint. Creation therefore exposes `video_id` as the OpenAI-style `id`, while
+retaining Agnes `task_id` as an extension. A 400/404 from the recommended
+endpoint triggers one read-only request to the legacy `/videos/{task_id}` route
+so task IDs returned by older gateway versions remain usable. No ID map or
+database is required.
 
 `GET /v1/videos/{video_id}/content` first obtains current task state. Once a
 successful task has a media URL, the gateway streams that URL with backpressure
@@ -180,8 +182,10 @@ resolve to the video content.
   compatibility contract intentionally sends them at `extra_body.image`. Base64
   output also differs between text-to-image and image-to-image requests.
 - Agnes documents both a recommended `/agnesapi?video_id=…` query and a legacy
-  `/v1/videos/{task_id}` query. The gateway uses the task-ID route so no ID map
-  or database is required.
+  `/v1/videos/{task_id}` query. Live testing found that a newly-created task was
+  rejected by the legacy route, so the gateway exposes `video_id` as its public
+  ID and uses the recommended route. A bounded legacy fallback preserves old
+  gateway IDs without an ID map or database.
 - Image generation may take 60–360 seconds. Deno Deploy can recycle instances
   and multipart parsing is memory-bound; use Docker for workloads that exceed
   the limits of a selected Deno Deploy plan.

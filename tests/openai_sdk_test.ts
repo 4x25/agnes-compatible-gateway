@@ -81,7 +81,10 @@ Deno.test("official OpenAI TypeScript SDK can use every gateway workflow", async
           size: "720x1280",
         }));
       }
-      if (url.pathname.endsWith("/videos/task_sdk")) {
+      if (
+        url.pathname.endsWith("/agnesapi") &&
+        url.searchParams.get("video_id") === "video_sdk"
+      ) {
         return Promise.resolve(Response.json({
           id: "task_sdk",
           video_id: "video_sdk",
@@ -182,7 +185,7 @@ Deno.test("official OpenAI TypeScript SDK can use every gateway workflow", async
       seconds: "4",
       size: "720x1280",
     });
-    assertEquals(created.id, "task_sdk");
+    assertEquals(created.id, "video_sdk");
 
     const retrieved = await client.videos.retrieve(created.id);
     assertEquals(retrieved.status, "completed");

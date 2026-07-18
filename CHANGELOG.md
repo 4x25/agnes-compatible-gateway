@@ -39,6 +39,10 @@ All notable changes to this project are documented here. The format follows
 - Standard image `response_format: b64_json` now uses the live-verified Agnes
   `extra_body.response_format` control after contract probes showed the
   documented `return_base64` control could still return a URL.
+- Video creation now exposes Agnes `video_id` as the public `id` and polls the
+  documented `/agnesapi?video_id=...` endpoint after live testing showed that
+  the legacy task-ID route rejected a newly-created task. A bounded read-only
+  fallback preserves retrieval for IDs returned by earlier gateway versions.
 - The OpenAPI contract names each supported Agnes extension and mirrors the
   runtime CORS request-header allowlist.
 - Upstream response-header waits are bounded, and client cancellation is

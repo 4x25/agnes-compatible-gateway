@@ -508,18 +508,17 @@ async function probeVideo(): Promise<void> {
     num_frames: 9,
     frame_rate: 24,
   });
-  const taskId = firstNonEmptyString(
-    created.body.task_id,
-    created.body.id,
+  const videoId = expectString(
+    created.body.video_id,
+    "Video creation must return video_id for documented stateless retrieval.",
   );
-  expect(taskId !== undefined, "Video creation must return task_id or id.");
   expectString(created.body.status, "Video creation must return a status.");
   recordShape("video-create", created.response, created.body);
 
   const deadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
   let retrieved: JsonResponse;
   while (true) {
-    retrieved = await retrieveVideo(taskId!);
+    retrieved = await retrieveVideo(videoId);
     const status = expectString(
       retrieved.body.status,
       "Video retrieval must return a status.",
@@ -630,14 +629,14 @@ function firstImage(body: JsonObject): JsonObject {
   return expectObject(data[0], "Image response data[0] must be an object.");
 }
 
-async function retrieveVideo(taskId: string): Promise<JsonResponse> {
-  // Newly-created task IDs can take a moment to appear on the legacy stateless
-  // retrieval route. Retry only these reads; generation requests are never
-  // retried, so the script cannot accidentally create duplicate billable work.
+async function retrieveVideo(videoId: string): Promise<JsonResponse> {
+  // Newly-created video IDs can take a moment to appear on the documented
+  // stateless retrieval route. Retry only transient reads; generation requests
+  // are never retried, so the script cannot create duplicate billable work.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await liveFetch(
+    const response = await liveFetchApiRoot(
       "video-retrieve",
-      `videos/${encodeURIComponent(taskId)}`,
+      `agnesapi?video_id=${encodeURIComponent(videoId)}`,
       { method: "GET", headers: authorizationHeaders() },
     );
     if (response.status !== 404 || attempt === 2) {
@@ -677,10 +676,33 @@ async function liveFetch(
   path: string,
   init: RequestInit,
 ): Promise<Response> {
+  return await liveFetchUrl(
+    probe,
+    `${config.baseUrl}/${path.replace(/^\/+/, "")}`,
+    init,
+  );
+}
+
+/** Call an Agnes endpoint adjacent to the configured terminal `/v1`. */
+async function liveFetchApiRoot(
+  probe: string,
+  path: string,
+  init: RequestInit,
+): Promise<Response> {
+  const versionRoot = config.baseUrl.replace(/\/v1$/i, "");
+  const url = new URL(path.replace(/^\/+/, ""), `${versionRoot}/`).toString();
+  return await liveFetchUrl(probe, url, init);
+}
+
+async function liveFetchUrl(
+  probe: string,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(`${config.baseUrl}/${path.replace(/^\/+/, "")}`, {
+    return await fetch(url, {
       ...init,
       redirect: "error",
       signal: controller.signal,
@@ -829,12 +851,6 @@ function expectUrl(value: unknown, message: string): URL {
   } catch {
     throw new Error(message);
   }
-}
-
-function firstNonEmptyString(...values: unknown[]): string | undefined {
-  return values.find((value): value is string =>
-    typeof value === "string" && value.trim() !== ""
-  );
 }
 
 function delay(milliseconds: number): Promise<void> {

@@ -215,10 +215,10 @@ paths:
       description: |
         `seconds` defaults to 4 and maps to 24 fps with
         `num_frames = seconds * 24 + 1`. `size` defaults to `720x1280` and is
-        split into Agnes width and height. The returned public `id` is the Agnes
-        task ID used for subsequent gateway calls. These standard fields and
-        their defaults override direct Agnes frame/size controls; a standard
-        `input_reference` overrides Agnes `image` controls.
+        split into Agnes width and height. The returned public `id` prefers the
+        Agnes `video_id` used for subsequent stateless gateway calls. These
+        standard fields and their defaults override direct Agnes frame/size
+        controls; a standard `input_reference` overrides Agnes `image` controls.
       security:
         - AgnesBearer: []
       requestBody:
@@ -254,9 +254,12 @@ paths:
       operationId: retrieveVideo
       summary: Retrieve or poll a video task
       description: |
-        The path value is an Agnes task `id`/`task_id`. The gateway calls the
-        stateless legacy Agnes task route and preserves useful Agnes extensions
-        such as `video_id`, `progress`, `url`, normalized size, and duration.
+        The path value is the Agnes `video_id` exposed as `id` by creation. The
+        gateway calls the documented stateless `/agnesapi?video_id=...` route
+        and preserves useful Agnes extensions such as `task_id`, `progress`,
+        `url`, normalized size, and duration. A 400/404 response falls back to
+        the legacy task route so IDs returned by older gateway versions remain
+        retrievable.
       security:
         - AgnesBearer: []
       responses:
@@ -378,7 +381,7 @@ components:
       name: video_id
       in: path
       required: true
-      description: Agnes task `id`/`task_id` returned by video creation.
+      description: Agnes `video_id`, exposed as `id` by video creation.
       schema:
         type: string
         minLength: 1
@@ -1044,13 +1047,13 @@ components:
       properties:
         id:
           type: string
-          description: Agnes task ID used in gateway retrieval paths.
+          description: Agnes video ID used in gateway retrieval paths.
         task_id:
           type: string
-          description: Agnes extension equivalent to `id`.
+          description: Agnes task identity retained as an extension.
         video_id:
           type: string
-          description: Agnes media identity extension; not the gateway retrieval key.
+          description: Agnes video identity; preferred as the public `id`.
         object:
           type: string
           const: video

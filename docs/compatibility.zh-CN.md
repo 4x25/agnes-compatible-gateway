@@ -127,10 +127,11 @@ OpenAI `seconds`、`size`（包括其默认值）优先于 Agnes 的 `num_frames
 
 ## 视频查询与内容下载
 
-`GET /v1/videos/{video_id}` 将公开路径参数视为创建响应中的 Agnes
-`task_id`/`id`，并调用 Agnes 旧版 `/videos/{task_id}`。这样无需保存 ID
-映射或数据库。响应仍保留 Agnes `video_id`、最终 `url`、进度、标准化尺寸和
-标准化时长等扩展字段。
+`GET /v1/videos/{video_id}` 将公开路径参数视为创建响应中的 Agnes `video_id`，
+并调用文档推荐的无状态 `/agnesapi?video_id=…`。因此创建响应将 `video_id` 暴露为
+OpenAI 风格的 `id`，同时保留 Agnes `task_id` 扩展。推荐接口返回 400/404
+时，网关会只读调用一次旧版 `/videos/{task_id}`，使旧版网关曾返回的 task ID
+仍可查询；整个过程无需 ID 映射或数据库。
 
 `GET /v1/videos/{video_id}/content` 先获取任务状态。任务成功且存在媒体 URL
 后，网关以具有背压的流代理内容，并转发调用方 `Range`。如果媒体存储属于
@@ -159,7 +160,9 @@ OpenAI 风格错误。
 - Agnes 图像文档在两个位置描述输入图片；网关明确选择
   `extra_body.image`。文生图和图生图的 Base64 输出控制方式也不同。
 - Agnes 同时记录推荐的 `/agnesapi?video_id=…` 与旧版
-  `/v1/videos/{task_id}`。本项目使用 task ID 路由，以避免 ID 表或数据库。
+  `/v1/videos/{task_id}`。实时测试发现新建任务会被旧版路由拒绝，因此网关将
+  `video_id` 作为公开 ID 并使用推荐路由；有限的旧版回退可兼容历史网关 ID，
+  同时仍不需要 ID 表或数据库。
 - 图片生成可能需要 60–360 秒。Deno Deploy 可能回收实例，multipart 解析
   受内存约束；超出所选 Deno Deploy 套餐限制的负载应使用 Docker。
 - 网关不施加账户配额，但 Agnes 或部署平台仍可能返回 `429`、尺寸限制或超时。

@@ -1,4 +1,4 @@
-import { joinBaseUrl } from "./config.ts";
+import { joinApiRootUrl, joinBaseUrl } from "./config.ts";
 import { GatewayError } from "./errors.ts";
 import { safeUpstreamHeaders } from "./http.ts";
 import type { FetchLike, GatewayConfig } from "./types.ts";
@@ -16,11 +16,40 @@ export class AgnesClient {
     init: Omit<RequestInit, "headers"> & { headers?: HeadersInit } = {},
     options: { detachInboundSignalAfterHeaders?: boolean } = {},
   ): Promise<Response> {
+    return this.requestCredentialed(
+      joinBaseUrl(this.config.agnesBaseUrl, path),
+      authorization,
+      init,
+      options,
+    );
+  }
+
+  /** Call an Agnes endpoint adjacent to `/v1`, currently video polling. */
+  requestApiRoot(
+    path: string,
+    authorization: string,
+    init: Omit<RequestInit, "headers"> & { headers?: HeadersInit } = {},
+    options: { detachInboundSignalAfterHeaders?: boolean } = {},
+  ): Promise<Response> {
+    return this.requestCredentialed(
+      joinApiRootUrl(this.config.agnesBaseUrl, path),
+      authorization,
+      init,
+      options,
+    );
+  }
+
+  private requestCredentialed(
+    url: string,
+    authorization: string,
+    init: Omit<RequestInit, "headers"> & { headers?: HeadersInit },
+    options: { detachInboundSignalAfterHeaders?: boolean },
+  ): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("authorization", authorization);
     headers.set("accept", headers.get("accept") ?? "application/json");
     return this.fetchResponseHeaders(
-      joinBaseUrl(this.config.agnesBaseUrl, path),
+      url,
       {
         ...init,
         // A redirect is not part of the configured Agnes API origin. Refusing

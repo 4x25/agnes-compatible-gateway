@@ -3,7 +3,11 @@ import {
   assertMatch,
   assertStringIncludes,
 } from "jsr:@std/assert@1.0.14";
-import { joinBaseUrl, normalizeBaseUrl } from "../lib/config.ts";
+import {
+  joinApiRootUrl,
+  joinBaseUrl,
+  normalizeBaseUrl,
+} from "../lib/config.ts";
 import { createGateway } from "../lib/gateway.ts";
 import type { FetchLike, JsonObject } from "../lib/types.ts";
 
@@ -18,6 +22,13 @@ Deno.test("configuration normalizes and joins the Agnes base URL", () => {
   assertEquals(
     joinBaseUrl("https://agnes.example/custom/v1", "/chat/completions"),
     "https://agnes.example/custom/v1/chat/completions",
+  );
+  assertEquals(
+    joinApiRootUrl(
+      "https://agnes.example/custom/v1",
+      "/agnesapi?video_id=video%2Fone",
+    ),
+    "https://agnes.example/custom/agnesapi?video_id=video%2Fone",
   );
   for (
     const unsafe of [
@@ -958,7 +969,8 @@ Deno.test("video JSON maps seconds and size while retaining Agnes extensions", a
   const payload = await response.json();
 
   assertEquals(response.status, 201);
-  assertEquals(payload.id, "task_1");
+  assertEquals(payload.id, "video_1");
+  assertEquals(payload.task_id, "task_1");
   assertEquals(body, {
     model: "agnes-video-v2.0",
     prompt: "ocean",
@@ -1077,25 +1089,61 @@ Deno.test("video JSON reference objects use image_url and report file_id", async
   );
 });
 
-Deno.test("video retrieval uses the legacy stateless Agnes task path", async () => {
+Deno.test("video retrieval uses the documented stateless Agnes video-ID query", async () => {
   const fetch: FetchLike = (input, init) => {
-    assertEquals(String(input), `${BASE_URL}/videos/task%2Fwith%20space`);
+    assertEquals(
+      String(input),
+      "https://agnes.example/agnesapi?video_id=video%2Fwith%20space",
+    );
     assertEquals(new Headers(init?.headers).get("authorization"), API_KEY);
     return Promise.resolve(Response.json({
-      video_id: "video_123",
+      id: "task_123",
+      task_id: "task_123",
+      video_id: "video/with space",
       status: "completed",
       url: "https://media.example/video.mp4",
     }));
   };
   const gateway = createGateway({ agnesBaseUrl: BASE_URL, fetch });
   const response = await gateway.handleVideoRetrieval(
-    getRequest("/v1/videos/task%2Fwith%20space"),
-    "task/with space",
+    getRequest("/v1/videos/video%2Fwith%20space"),
+    "video/with space",
   );
   const payload = await response.json();
   assertEquals(response.status, 200);
-  assertEquals(payload.id, "video_123");
-  assertEquals(payload.video_id, "video_123");
+  assertEquals(payload.id, "video/with space");
+  assertEquals(payload.task_id, "task_123");
+});
+
+Deno.test("video retrieval falls back for task IDs returned by older gateways", async () => {
+  let calls = 0;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (input) => {
+      calls += 1;
+      if (calls === 1) {
+        assertEquals(
+          String(input),
+          "https://agnes.example/agnesapi?video_id=task_old",
+        );
+        return Promise.resolve(Response.json({ error: {} }, { status: 400 }));
+      }
+      assertEquals(String(input), `${BASE_URL}/videos/task_old`);
+      return Promise.resolve(Response.json({
+        task_id: "task_old",
+        status: "completed",
+        url: "https://media.example/video.mp4",
+      }));
+    },
+  });
+  const response = await gateway.handleVideoRetrieval(
+    getRequest("/v1/videos/task_old"),
+    "task_old",
+  );
+  const payload = await response.json();
+  assertEquals(response.status, 200);
+  assertEquals(payload.id, "task_old");
+  assertEquals(calls, 2);
 });
 
 Deno.test("video content resolves metadata then proxies a Range without the API key", async () => {
@@ -1104,10 +1152,15 @@ Deno.test("video content resolves metadata then proxies a Range without the API 
   const fetch: FetchLike = (input, init) => {
     calls += 1;
     if (calls === 1) {
-      assertEquals(String(input), `${BASE_URL}/videos/task_3`);
+      assertEquals(
+        String(input),
+        "https://agnes.example/agnesapi?video_id=video_3",
+      );
       assertEquals(new Headers(init?.headers).get("authorization"), API_KEY);
       return Promise.resolve(Response.json({
         id: "task_3",
+        task_id: "task_3",
+        video_id: "video_3",
         status: "completed",
         url: "https://media.example/video.mp4",
       }));
@@ -1131,10 +1184,10 @@ Deno.test("video content resolves metadata then proxies a Range without the API 
   };
   const gateway = createGateway({ agnesBaseUrl: BASE_URL, fetch });
   const request = getRequest(
-    "/v1/videos/task_3/content?variant=thumbnail",
+    "/v1/videos/video_3/content?variant=thumbnail",
     { range: "bytes=10-12" },
   );
-  const response = await gateway.handleVideoContent(request, "task_3");
+  const response = await gateway.handleVideoContent(request, "video_3");
 
   assertEquals(response.status, 206);
   assertEquals(new Uint8Array(await response.arrayBuffer()), bytes);

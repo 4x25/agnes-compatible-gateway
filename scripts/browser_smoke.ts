@@ -481,7 +481,9 @@ async function startFakeAgnes(timeoutMs: number): Promise<FakeAgnesServer> {
     if (request.method === "POST" && url.pathname === "/v1/videos") {
       videoCounter += 1;
       return Response.json({
-        task_id: `browser-video-${videoCounter}`,
+        id: `browser-task-${videoCounter}`,
+        task_id: `browser-task-${videoCounter}`,
+        video_id: `browser-video-${videoCounter}`,
         status: "queued",
         progress: 0,
       }, {
@@ -489,14 +491,15 @@ async function startFakeAgnes(timeoutMs: number): Promise<FakeAgnesServer> {
         headers: { "x-request-id": "fake-video-create" },
       });
     }
-    const videoMatch = /^\/v1\/videos\/([^/]+)$/.exec(url.pathname);
-    if (request.method === "GET" && videoMatch) {
-      const taskId = decodeURIComponent(videoMatch[1]);
+    if (request.method === "GET" && url.pathname === "/agnesapi") {
+      const videoId = url.searchParams.get("video_id") ?? "missing-video-id";
       return Response.json({
-        task_id: taskId,
+        id: `task-for-${videoId}`,
+        task_id: `task-for-${videoId}`,
+        video_id: videoId,
         status: "completed",
         progress: 100,
-        url: `${origin}/media/${encodeURIComponent(taskId)}.mp4`,
+        url: `${origin}/media/${encodeURIComponent(videoId)}.mp4`,
       }, { headers: { "x-request-id": "fake-video-retrieve" } });
     }
     if (request.method === "GET" && url.pathname.startsWith("/media/")) {
