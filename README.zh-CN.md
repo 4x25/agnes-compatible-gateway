@@ -144,14 +144,14 @@ credentials。错误统一为 OpenAI 风格的
 
 只有对应验收证据存在时才更新状态；仅完成代码修改不等于里程碑完成。
 
-| 里程碑                | 状态                    | 证据 / 完成标准                                                                                                                  |
-| --------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                                                |
-| M1 — 运行时与核心基础 | ✅ 已完成（2026-07-17） | [CI 验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) 已通过 Deno 2.5.6/2.9.3、Docker 与 Chromium |
-| M2 — Chat 与 Images   | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m2.zh-CN.md) 已覆盖 Chat、错误、图片 URL/Base64 与 Data URI 编辑                 |
-| M3 — Video 闭环       | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m3.zh-CN.md) 已覆盖真实创建、video-ID 轮询与 Range 内容下载                      |
-| M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查                                 |
-| M5 — 开源发布就绪     | 🚧 进行中               | 双语文档与工作流已就绪；仍需 Deno Deploy Preview、多架构 GHCR 发布和 `v0.1.0` 验收                                               |
+| 里程碑                | 状态                    | 证据 / 完成标准                                                                                                                                 |
+| --------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                                                               |
+| M1 — 运行时与核心基础 | ✅ 已完成（2026-07-17） | [CI 验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) 已通过 Deno 2.5.6/2.9.3、Docker 与 Chromium                |
+| M2 — Chat 与 Images   | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m2.zh-CN.md) 已覆盖 Chat、错误、图片 URL/Base64 与 Data URI 编辑                                |
+| M3 — Video 闭环       | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m3.zh-CN.md) 已覆盖真实创建、video-ID 轮询与 Range 内容下载                                     |
+| M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查                                                |
+| M5 — 开源发布就绪     | 🚧 进行中               | [GHCR 候选版本验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29655101517) 已通过；仍需 Deno Deploy Preview 与正式 `v0.1.0` |
 
 ### 本地验收快照 — 2026-07-16
 
@@ -176,8 +176,19 @@ credentials。错误统一为 OpenAI 风格的
 - Chromium 任务在 GitHub 托管环境中重复验证了双语、响应式、在线测试台及凭据
   安全验收。
 
-现在仅 M5 仍需外部验收：Deno Deploy Preview、GHCR 多架构发布成功及 `v0.1.0`
-正式发布。
+### 候选版本验收 — 2026-07-18
+
+- `v0.1.0-rc.2` 已向 GHCR 发布可匿名拉取的 OCI Index，同时包含 `linux/amd64` 与
+  `linux/arm64` 镜像。
+- 两种架构均附带 SPDX SBOM 和 SLSA provenance，将不可变源码 SHA 写入
+  `DENO_DEPLOYMENT_ID`，包含 MIT/源码/版本 OCI 标签，并以无特权 `deno`
+  用户运行。
+- [发布运行 29655101517](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29655101517)
+  检查了远端 Manifest，并以只读文件系统、移除 capabilities 的方式启动已发布
+  digest，`/healthz` 验证成功。
+
+现在仅 M5 仍需外部验收：创建并验证 Deno Deploy Preview，以及发布正式
+`v0.1.0`。GHCR 多架构发布要求已经完成。
 
 ## 文档
 
