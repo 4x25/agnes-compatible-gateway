@@ -49,6 +49,33 @@ The milestone cannot be marked complete until a real preview has passed the
 health, Chat SSE, image upload, and video polling checks. Repository CI alone
 does not establish that result.
 
+### Automated Preview acceptance
+
+The opt-in deployment probe exercises those checks through the public gateway,
+not directly against Agnes. It defaults to the non-billable `health` scope and
+refuses redirects or non-HTTPS deployment URLs, except explicit loopback HTTP
+for local diagnostics. Run the complete acceptance only with a disposable
+caller-owned Agnes key after reviewing current upstream pricing:
+
+```bash
+read -rsp "Disposable Agnes test key: " AGNES_API_KEY_ONLY_FOR_TEST
+printf '\n'
+export AGNES_API_KEY_ONLY_FOR_TEST
+RUN_DEPLOYMENT_LIVE_TESTS=1 \
+  DEPLOYMENT_SMOKE_BASE_URL=https://your-preview.example \
+  DEPLOYMENT_SMOKE_SCOPES=all \
+  deno task test:deployment
+unset AGNES_API_KEY_ONLY_FOR_TEST
+```
+
+The scopes are `health`, `chat-sse`, `image-upload`, and `video`; `all` must be
+used by itself. The script runs them sequentially, never retries a generation,
+and emits only status codes, redacted request IDs, and bounded field/type
+shapes. It validates CORS and cache controls, Chat SSE termination, a real
+multipart edit, video terminal polling, and `Range: bytes=0-0` through the
+gateway content route. It never prints the key, prompts, IDs, URLs, Base64, or
+media bytes and is not part of ordinary CI.
+
 ## Published Docker image
 
 Version tags are published to:
@@ -99,7 +126,10 @@ Callers supply it in the HTTP Authorization header.
 | ----------------------------- | ------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `AGNES_BASE_URL`              | No                  | `https://apihub.agnes-ai.com/v1` | Trailing slashes are normalized. Set only to an upstream controlled/trusted by the operator because caller keys are sent there. |
 | `AGNES_API_KEY_ONLY_FOR_TEST` | Never in production | unset                            | Recognized only by explicitly enabled live contract tests.                                                                      |
-| `RUN_AGNES_LIVE_TESTS`        | Never in production | unset                            | Must equal `1` as a second live-test safety gate.                                                                               |
+| `RUN_AGNES_LIVE_TESTS`        | Never in production | unset                            | Must equal `1` as a second upstream live-test safety gate.                                                                      |
+| `RUN_DEPLOYMENT_LIVE_TESTS`   | Never in production | unset                            | Must equal `1` before the external deployment probe can run.                                                                    |
+| `DEPLOYMENT_SMOKE_BASE_URL`   | Test process only   | unset                            | Explicit HTTPS origin of an already running gateway.                                                                            |
+| `DEPLOYMENT_SMOKE_SCOPES`     | Test process only   | `health`                         | Comma-separated deployment probes, or `all` by itself.                                                                          |
 
 ## Reverse proxy and operations
 

@@ -2,11 +2,12 @@
   "version": "0.1.0",
   "nodeModulesDir": "manual",
   "tasks": {
-    "check": "deno fmt --check . && deno lint . && deno check main.ts client.ts scripts/browser_smoke.ts tests/live_contract.ts && deno test -A --no-run",
+    "check": "deno fmt --check . && deno lint . && deno check main.ts client.ts scripts/browser_smoke.ts tests/live_contract.ts tests/deployment_contract.ts && deno test -A --no-run",
     "test": "deno test -A",
     "test:coverage": "deno test -A --coverage=.coverage && deno coverage .coverage --lcov --output=coverage/lcov.info",
     "test:browser": "deno run -A scripts/browser_smoke.ts",
     "test:live": "deno run --allow-net --allow-env=RUN_AGNES_LIVE_TESTS,AGNES_API_KEY_ONLY_FOR_TEST,AGNES_BASE_URL,AGNES_LIVE_SCOPES,AGNES_LIVE_CHAT_MODEL,AGNES_LIVE_IMAGE_MODEL,AGNES_LIVE_VIDEO_MODEL,AGNES_LIVE_VIDEO_WAIT_FOR_COMPLETION tests/live_contract.ts",
+    "test:deployment": "deno run --allow-net --allow-env=RUN_DEPLOYMENT_LIVE_TESTS,AGNES_API_KEY_ONLY_FOR_TEST,DEPLOYMENT_SMOKE_BASE_URL,DEPLOYMENT_SMOKE_SCOPES,AGNES_LIVE_CHAT_MODEL,AGNES_LIVE_IMAGE_MODEL,AGNES_LIVE_VIDEO_MODEL tests/deployment_contract.ts",
     "dev": "vite",
     "build": "vite build",
     "start": "deno serve --allow-env --allow-net --allow-read _fresh/server.js",

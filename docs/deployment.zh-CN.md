@@ -42,6 +42,30 @@ Deno Deploy 会为构建设置部署标识；每个 Docker 镜像也会设置非
 只有真实 Preview 通过健康检查、Chat SSE、图片上传和视频轮询后，相关里程碑
 才能标记完成；仓库 CI 通过不能替代这一结果。
 
+### 自动化 Preview 验收
+
+显式启用的部署探测通过网关公开接口执行上述检查，而不是直连 Agnes。默认只运行
+不计费的 `health` scope，并拒绝重定向或非 HTTPS 部署地址；仅本地诊断允许显式
+loopback HTTP。核对当前上游价格后，使用可丢弃、由调用方拥有的 Agnes Key 执行
+完整验收：
+
+```bash
+read -rsp "一次性 Agnes 测试 Key：" AGNES_API_KEY_ONLY_FOR_TEST
+printf '\n'
+export AGNES_API_KEY_ONLY_FOR_TEST
+RUN_DEPLOYMENT_LIVE_TESTS=1 \
+  DEPLOYMENT_SMOKE_BASE_URL=https://your-preview.example \
+  DEPLOYMENT_SMOKE_SCOPES=all \
+  deno task test:deployment
+unset AGNES_API_KEY_ONLY_FOR_TEST
+```
+
+可选 scope 为 `health`、`chat-sse`、`image-upload` 和 `video`；`all` 必须单独
+使用。脚本按顺序执行，绝不重试生成请求，只输出状态码、脱敏请求 ID 和有界的
+字段/类型结构。它验证 CORS 与缓存控制、Chat SSE 终止、真实 multipart 编辑、
+视频终态轮询，以及通过网关内容接口执行的 `Range: bytes=0-0`。脚本不会输出 Key、
+提示词、ID、URL、Base64 或媒体字节，也不会进入普通 CI。
+
 ## 已发布 Docker 镜像
 
 版本镜像发布到：
@@ -91,7 +115,10 @@ Authorization 请求头提供。
 | ----------------------------- | ---------------- | -------------------------------- | ------------------------------------------------------------------------------ |
 | `AGNES_BASE_URL`              | 否               | `https://apihub.agnes-ai.com/v1` | 自动处理末尾斜杠。调用方 Key 会发送到这里，因此只能设为运营者信任/控制的上游。 |
 | `AGNES_API_KEY_ONLY_FOR_TEST` | 生产环境绝不设置 | 未设置                           | 只供明确启用的实时契约测试读取。                                               |
-| `RUN_AGNES_LIVE_TESTS`        | 生产环境绝不设置 | 未设置                           | 必须等于 `1`，作为实时测试的第二道安全开关。                                   |
+| `RUN_AGNES_LIVE_TESTS`        | 生产环境绝不设置 | 未设置                           | 必须等于 `1`，作为上游实时测试的第二道安全开关。                               |
+| `RUN_DEPLOYMENT_LIVE_TESTS`   | 生产环境绝不设置 | 未设置                           | 必须等于 `1`，外部部署探测才可运行。                                           |
+| `DEPLOYMENT_SMOKE_BASE_URL`   | 仅测试进程       | 未设置                           | 已运行网关的显式 HTTPS Origin。                                                |
+| `DEPLOYMENT_SMOKE_SCOPES`     | 仅测试进程       | `health`                         | 逗号分隔的部署探测项，或单独使用 `all`。                                       |
 
 ## 反向代理与运维
 

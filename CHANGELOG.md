@@ -23,6 +23,8 @@ All notable changes to this project are documented here. The format follows
   multipart uploads, video polling/content, previews, and credential hygiene.
 - OpenAPI 3.1 contract, locked Deno build, non-root Docker image, CI matrix, and
   multi-architecture GHCR release workflow with SBOM and provenance.
+- A separately gated deployment acceptance probe for real Preview health/CORS,
+  Chat SSE, multipart image editing, video polling, and byte-range content.
 
 ### Changed
 

@@ -43,7 +43,10 @@ docker compose up --build
 真实上游探测前，请阅读[实时契约测试](docs/contract-testing.zh-CN.md)；实时测试
 要求两个显式环境开关和可丢弃的测试 Key。无额外依赖的
 [浏览器 Smoke 测试](docs/browser-testing.zh-CN.md)默认自行启动本地服务；文档还说明
-了如何选择其他 Chromium 二进制或测试已经运行的部署。
+了如何选择其他 Chromium 二进制或测试已经运行的部署。维护者可按
+[部署文档](docs/deployment.zh-CN.md)使用独立安全开关启用
+`deno task test:deployment`，完成真实 Preview 验收；普通 Pull Request
+不要求执行。
 
 ## 架构约定
 

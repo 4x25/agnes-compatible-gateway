@@ -48,7 +48,10 @@ upstream. It must not require a network or credential. Read
 probe; live probes require two explicit environment gates and a disposable test
 key. The dependency-free [browser smoke test](docs/browser-testing.md) starts
 its own local server by default and documents how to select another Chromium
-binary or an already running deployment.
+binary or an already running deployment. Maintainers can use the separately
+gated `deno task test:deployment` workflow documented in
+[Deployment](docs/deployment.md) for real Preview acceptance; it is never a
+pull-request requirement.
 
 ## Architecture expectations
 
