@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-19
+
 ### Added
 
 - Initial feasibility research and explicit OpenAI-to-Agnes compatibility policy
@@ -23,8 +25,8 @@ All notable changes to this project are documented here. The format follows
   multipart uploads, video polling/content, previews, and credential hygiene.
 - OpenAPI 3.1 contract, locked Deno build, non-root Docker image, CI matrix, and
   multi-architecture GHCR release workflow with SBOM and provenance.
-- A separately gated deployment acceptance probe for real Preview health/CORS,
-  Chat SSE, multipart image editing, video polling, and byte-range content.
+- A separately gated acceptance probe for real Deno Deploy health/CORS, Chat
+  SSE, multipart image editing, video polling, and byte-range content.
 
 ### Changed
 
@@ -67,5 +69,5 @@ All notable changes to this project are documented here. The format follows
 - Generated media is fetched without Authorization and returned with private,
   no-store cache policy and credential-aware response variation.
 
-No version has been published from this changelog yet. Validate the
-corresponding Git tag and GHCR digest before treating an image as a release.
+[Unreleased]: https://github.com/4x25/agnes-compatible-gateway/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/4x25/agnes-compatible-gateway/releases/tag/v0.1.0

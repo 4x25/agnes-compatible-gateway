@@ -6,6 +6,19 @@ The gateway is stateless. A deployment needs outbound HTTPS access to Agnes, but
 it does **not** need a database, cache, queue, persistent volume, or server API
 key.
 
+## Maintainer reference deployment
+
+The project is deployed on the current Deno Deploy platform at
+[agnes-compatible-gateway.zo.deno.net](https://agnes-compatible-gateway.zo.deno.net).
+Its health, CORS, Chat SSE, multipart image editing, video polling, and Range
+content path passed the
+[2026-07-19 redacted acceptance](contract-results/2026-07-19-m5.md).
+
+This is an operator-managed reference environment, not a credential escrow:
+requests sent there necessarily carry a caller key through that operator's
+origin. Self-host the gateway when workload or credential policy requires full
+control.
+
 ## Deno Deploy (current platform)
 
 These instructions target the current Deno Deploy platform at
@@ -45,11 +58,11 @@ releases.
   visitor can send their own Agnes key through your origin; publish a privacy
   notice appropriate to your deployment.
 
-The milestone cannot be marked complete until a real preview has passed the
-health, Chat SSE, image upload, and video polling checks. Repository CI alone
-does not establish that result.
+The milestone cannot be marked complete until a real Deno Deploy Preview or
+Production revision has passed the health, Chat SSE, image upload, and video
+polling checks. Repository CI alone does not establish that result.
 
-### Automated Preview acceptance
+### Automated deployment acceptance
 
 The opt-in deployment probe exercises those checks through the public gateway,
 not directly against Agnes. It defaults to the non-billable `health` scope and
@@ -157,4 +170,4 @@ password secret.
 
 Before tagging, require green CI, update `CHANGELOG.md`, verify both README
 milestone tables, run the opt-in contract suite with a disposable test key, and
-complete the Deno Deploy preview checklist.
+complete the Deno Deploy Preview or Production checklist.

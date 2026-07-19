@@ -6,6 +6,10 @@
 
 English · [简体中文](README.zh-CN.md)
 
+[Maintainer reference deployment](https://agnes-compatible-gateway.zo.deno.net)
+— caller keys traverse that operator-managed origin; self-host for sensitive
+workloads.
+
 An unofficial, lightweight, open-source gateway that presents Agnes AI text,
 image, and video APIs through a focused OpenAI-compatible interface. It is
 designed for Deno Deploy and also ships as a Docker image.
@@ -154,14 +158,14 @@ See [Security Policy](SECURITY.md) for reporting vulnerabilities and
 Status is updated when the corresponding acceptance evidence exists; a source
 change by itself does not mark a milestone complete.
 
-| Milestone                               | Status                   | Evidence / completion criterion                                                                                                                                      |
-| --------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0 — Feasibility and protocol decisions | ✅ Complete (2026-07-16) | [Research baseline and compatibility decisions](docs/compatibility.md)                                                                                               |
-| M1 — Runtime and core foundation        | ✅ Complete (2026-07-17) | [CI acceptance](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) passed Deno 2.5.6/2.9.3, Docker, and Chromium                             |
-| M2 — Chat and Images                    | ✅ Complete (2026-07-18) | [Live contract acceptance](docs/contract-results/2026-07-18-m2.md) covers Chat, errors, Image URL/Base64, and Data-URI editing                                       |
-| M3 — Video lifecycle                    | ✅ Complete (2026-07-18) | [Live contract acceptance](docs/contract-results/2026-07-18-m3.md) covers real creation, video-ID polling, and Range content download                                |
-| M4 — Home page and API playground       | ✅ Complete (2026-07-16) | [Full Chromium/CDP acceptance](docs/browser-testing.md) covers both languages, five playground workflows, all six routes, and safety                                 |
-| M5 — Community-ready release            | 🚧 In progress           | [GHCR release-candidate acceptance](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29655101517) passed; Deno Deploy Preview and final `v0.1.0` remain |
+| Milestone                               | Status                   | Evidence / completion criterion                                                                                                          |
+| --------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 — Feasibility and protocol decisions | ✅ Complete (2026-07-16) | [Research baseline and compatibility decisions](docs/compatibility.md)                                                                   |
+| M1 — Runtime and core foundation        | ✅ Complete (2026-07-17) | [CI acceptance](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) passed Deno 2.5.6/2.9.3, Docker, and Chromium |
+| M2 — Chat and Images                    | ✅ Complete (2026-07-18) | [Live contract acceptance](docs/contract-results/2026-07-18-m2.md) covers Chat, errors, Image URL/Base64, and Data-URI editing           |
+| M3 — Video lifecycle                    | ✅ Complete (2026-07-18) | [Live contract acceptance](docs/contract-results/2026-07-18-m3.md) covers real creation, video-ID polling, and Range content download    |
+| M4 — Home page and API playground       | ✅ Complete (2026-07-16) | [Full Chromium/CDP acceptance](docs/browser-testing.md) covers both languages, five playground workflows, all six routes, and safety     |
+| M5 — Community-ready release            | 🚧 In progress           | [Deno Deploy/GHCR acceptance](docs/contract-results/2026-07-19-m5.md) passed; only final `v0.1.0` publication remains                    |
 
 ### Local acceptance snapshot — 2026-07-16
 
@@ -199,9 +203,21 @@ change by itself does not mark a milestone complete.
   inspected the remote manifest and started the published digest with a
   read-only filesystem, dropped capabilities, and a successful `/healthz`.
 
-External acceptance remains open only for M5: it needs a Deno Deploy Preview, a
-successful validation on that Preview, and the final `v0.1.0` release. The GHCR
-multi-architecture publication requirement is complete.
+### Deno Deploy acceptance — 2026-07-19
+
+- The maintainer-hosted Production deployment passed `/healthz`, CORS, Chat SSE,
+  a real multipart image edit, video creation/terminal polling, and a `206`
+  byte-range content request using the gated deployment probe.
+- Chromium 146 independently passed both languages, all six responsive widths,
+  keyboard/focus, reduced-motion, and credential non-persistence against the
+  deployed origin.
+- The [redacted acceptance record](docs/contract-results/2026-07-19-m5.md)
+  contains only public deployment metadata, statuses, field types, and redacted
+  request IDs.
+
+Only the final `v0.1.0` GitHub/GHCR publication remains before M5 can be marked
+complete. The Deno Deploy and multi-architecture candidate requirements have
+passed.
 
 ## Documentation
 

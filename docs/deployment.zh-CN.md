@@ -5,6 +5,16 @@
 本项目是无状态网关。部署环境需要能够通过 HTTPS 访问 Agnes，但**不需要**
 数据库、缓存、队列、持久卷或服务端 API Key。
 
+## 维护者参考部署
+
+项目已部署到新版 Deno Deploy：
+[agnes-compatible-gateway.zo.deno.net](https://agnes-compatible-gateway.zo.deno.net)。
+健康检查、CORS、Chat SSE、multipart 图片编辑、视频轮询和 Range 内容路径已通过
+[2026-07-19 脱敏验收](contract-results/2026-07-19-m5.zh-CN.md)。
+
+这是运营者管理的参考环境，并非凭据托管服务：发往该地址的请求必然携带调用方 Key
+经过该运营者的 Origin。如果工作负载或凭据策略要求完全控制，请自行部署网关。
+
 ## Deno Deploy（当前平台）
 
 以下步骤适用于 [console.deno.com](https://console.deno.com) 的新版 Deno
@@ -39,10 +49,10 @@ Deno Deploy 会为构建设置部署标识；每个 Docker 镜像也会设置非
 - 浏览器可通过 CORS 调用。公开部署意味着访问者可通过你的域名发送其 Agnes
   Key，请为实际部署提供合适的隐私声明。
 
-只有真实 Preview 通过健康检查、Chat SSE、图片上传和视频轮询后，相关里程碑
-才能标记完成；仓库 CI 通过不能替代这一结果。
+只有真实 Deno Deploy Preview 或 Production 版本通过健康检查、Chat SSE、图片上传
+和视频轮询后，相关里程碑才能标记完成；仓库 CI 通过不能替代这一结果。
 
-### 自动化 Preview 验收
+### 自动化部署验收
 
 显式启用的部署探测通过网关公开接口执行上述检查，而不是直连 Agnes。默认只运行
 不计费的 `health` scope，并拒绝重定向或非 HTTPS 部署地址；仅本地诊断允许显式
@@ -139,4 +149,5 @@ Authorization 请求头提供。
 生成证明并发布到 GitHub Container Registry，无需设置镜像仓库密码 Secret。
 
 打 Tag 前必须保证 CI 全绿、更新 `CHANGELOG.md`、核对两份 README 里程碑、
-使用一次性测试 Key 执行可选契约测试，并完成 Deno Deploy Preview 清单。
+使用一次性测试 Key 执行可选契约测试，并完成 Deno Deploy Preview 或 Production
+清单。
