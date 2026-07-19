@@ -1,6 +1,7 @@
 # Agnes OpenAI 兼容网关
 
 [![CI](https://github.com/4x25/agnes-compatible-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/4x25/agnes-compatible-gateway/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/4x25/agnes-compatible-gateway)](https://github.com/4x25/agnes-compatible-gateway/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Container](https://img.shields.io/badge/GHCR-container-2496ED)](https://github.com/4x25/agnes-compatible-gateway/pkgs/container/agnes-compatible-gateway)
 
@@ -147,14 +148,14 @@ credentials。错误统一为 OpenAI 风格的
 
 只有对应验收证据存在时才更新状态；仅完成代码修改不等于里程碑完成。
 
-| 里程碑                | 状态                    | 证据 / 完成标准                                                                                                                  |
-| --------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                                                |
-| M1 — 运行时与核心基础 | ✅ 已完成（2026-07-17） | [CI 验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) 已通过 Deno 2.5.6/2.9.3、Docker 与 Chromium |
-| M2 — Chat 与 Images   | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m2.zh-CN.md) 已覆盖 Chat、错误、图片 URL/Base64 与 Data URI 编辑                 |
-| M3 — Video 闭环       | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m3.zh-CN.md) 已覆盖真实创建、video-ID 轮询与 Range 内容下载                      |
-| M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查                                 |
-| M5 — 开源发布就绪     | 🚧 进行中               | [Deno Deploy/GHCR 验收](docs/contract-results/2026-07-19-m5.zh-CN.md) 已通过；仅剩正式发布 `v0.1.0`                              |
+| 里程碑                | 状态                    | 证据 / 完成标准                                                                                                                                                  |
+| --------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 — 可行性与协议决策 | ✅ 已完成（2026-07-16） | [调研基线与兼容决策](docs/compatibility.zh-CN.md)                                                                                                                |
+| M1 — 运行时与核心基础 | ✅ 已完成（2026-07-17） | [CI 验收](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29562152663) 已通过 Deno 2.5.6/2.9.3、Docker 与 Chromium                                 |
+| M2 — Chat 与 Images   | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m2.zh-CN.md) 已覆盖 Chat、错误、图片 URL/Base64 与 Data URI 编辑                                                 |
+| M3 — Video 闭环       | ✅ 已完成（2026-07-18） | [实时契约验收](docs/contract-results/2026-07-18-m3.zh-CN.md) 已覆盖真实创建、video-ID 轮询与 Range 内容下载                                                      |
+| M4 — 首页与接口测试台 | ✅ 已完成（2026-07-16） | [完整 Chromium/CDP 验收](docs/browser-testing.zh-CN.md) 覆盖双语、五种工作流、六个接口与安全检查                                                                 |
+| M5 — 开源发布就绪     | ✅ 已完成（2026-07-19） | [Deno Deploy/GHCR/发布验收](docs/contract-results/2026-07-19-m5.zh-CN.md)及公开 [`v0.1.0`](https://github.com/4x25/agnes-compatible-gateway/releases/tag/v0.1.0) |
 
 ### 本地验收快照 — 2026-07-16
 
@@ -199,8 +200,18 @@ credentials。错误统一为 OpenAI 风格的
 - [脱敏验收记录](docs/contract-results/2026-07-19-m5.zh-CN.md)只包含公开部署元数据、
   状态、字段类型和脱敏请求 ID。
 
-M5 仅剩正式发布 GitHub/GHCR `v0.1.0`。Deno Deploy 和多架构候选版本要求均已
-通过。
+### v0.1.0 发布验收 — 2026-07-19
+
+- Tag `v0.1.0` 指向已验收源码 `cdee341`；对应
+  [发布工作流](https://github.com/4x25/agnes-compatible-gateway/actions/runs/29671245362)
+  发布并健康检查了不可变 GHCR OCI Index
+  `sha256:008a93110cd362beffa760859e7ed25fbe85a0be2ead76fc05a001871fbbc64f`。
+- 匿名 Registry 检查确认 `0.1.0`、`0.1`、`0`、`latest` 与 `sha-cdee341` 均指向该
+  digest。两个架构都使用 `deno` 用户，并包含 SPDX/SLSA 证明、已验收源码 revision
+  与一致的部署 ID。
+- 公开的
+  [GitHub v0.1.0 Release](https://github.com/4x25/agnes-compatible-gateway/releases/tag/v0.1.0)
+  不是 Draft 或 Prerelease。项目全部里程碑均已完成。
 
 ## 文档
 
