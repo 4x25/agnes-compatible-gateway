@@ -2,12 +2,13 @@
 
 [简体中文](compatibility.zh-CN.md)
 
-Research baseline: **2026-07-16**. This document describes the gateway's
+Research baseline: **2026-09-18**. This document describes the gateway's
 intentional public contract. It is based on the Agnes documentation for
-[chat](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash.md),
-[images](https://agnes-ai.com/zh-Hans/docs/agnes-image-21-flash.md), and
-[video](https://agnes-ai.com/zh-Hans/docs/agnes-video-v20.md), and the current
-OpenAI HTTP references for
+[chat](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash.md),
+[images](https://agnes-ai.com/zh-Hans/docs/agnes-image-25-flash.md),
+[video 2.5](https://agnes-ai.com/zh-Hans/docs/agnes-video-25-flash.md), and
+[video V2.0](https://agnes-ai.com/zh-Hans/docs/agnes-video-v20.md), and the
+current OpenAI HTTP references for
 [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create),
 [Images](https://developers.openai.com/api/reference/resources/images/methods/generate),
 and
@@ -57,23 +58,22 @@ overridden path is reported as ignored.
 
 `POST /v1/chat/completions`
 
-| Classification  | Fields and behavior                                                                                                                                                                                                                                           |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pass-through    | `model`, `temperature`, `top_p`, `max_tokens`, and `stream`                                                                                                                                                                                                   |
-| Translated      | `max_completion_tokens` → `max_tokens`; `developer` message role → `system`; every message is rebuilt from only `role` and `content`                                                                                                                          |
-| Partial         | Message roles are limited to `system`, `user`, and `assistant` after translation. Content may be a string or an array of `text` and public `image_url` blocks. Unsupported blocks in a mixed array are dropped; an array with no usable blocks returns `400`. |
-| Partial         | Top-level `tools` and `tool_choice` are forwarded after container-type validation. Agnes documents tool requests, but the gateway cannot complete an OpenAI tool-result round trip because tool messages are unsupported.                                     |
-| Agnes extension | `chat_template_kwargs` and `thinking`                                                                                                                                                                                                                         |
-| Ignored         | Unknown top-level controls and unknown nested message/content-block fields are removed and reported by full path. This includes message `name`, `tool_calls`, `tool_call_id`, audio, refusal, metadata, and image detail fields.                              |
-| Rejected        | A `tool` role/tool-result message, any other undocumented role, missing `content`, or content with an invalid shape returns `400`; the gateway does not invent a substitute message.                                                                          |
+| Classification  | Fields and behavior                                                                                                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pass-through    | `model`, `temperature`, `top_p`, `max_tokens`, and `stream`                                                                                                                                                                                         |
+| Translated      | `max_completion_tokens` → `max_tokens`; `developer` message role → `system`; every message is rebuilt from only documented fields                                                                                                                   |
+| Partial         | Message roles are limited to `system`, `user`, `assistant`, and `tool`. Content may be a string or an array of `text` and public `image_url` blocks. Unsupported blocks in a mixed array are dropped; an array with no usable blocks returns `400`. |
+| Translated      | Assistant `tool_calls` and `tool_call_id` tool-result messages complete the OpenAI function-calling round trip documented for Agnes 3.0 Flash. `content` may be `null` on an assistant message that carries tool calls.                             |
+| Agnes extension | `chat_template_kwargs` and `thinking`                                                                                                                                                                                                               |
+| Ignored         | Unknown top-level controls and unknown nested message/content-block/tool-call fields are removed and reported by full path. This includes message `name`, audio, refusal, metadata, and image detail fields.                                        |
+| Rejected        | Any other undocumented role, a `tool` message without `tool_call_id`, missing content on non-tool-assistant messages, or content with an invalid shape returns `400`; the gateway does not invent a substitute message.                             |
 
 If both `max_completion_tokens` and `max_tokens` are present,
 `max_completion_tokens` takes precedence. SSE responses are forwarded as a
 backpressured byte stream, including the upstream `[DONE]` marker. The gateway
-does not synthesize usage chunks or reinterpret tool-call output. Because only
-Agnes-documented message fields are sent upstream, callers should execute tool
-calls outside this endpoint until Agnes documents and the gateway implements a
-tool-result message contract.
+does not synthesize usage chunks or reinterpret tool-call output. Tool calls are
+forwarded for the caller to execute; the validated OpenAI continuation fields
+are then accepted on the next request.
 
 ## Image generations
 
@@ -141,6 +141,24 @@ paths are reported as ignored. A standard `input_reference` similarly overrides
 the Agnes `image` and `extra_body.image` controls. Video generation is
 asynchronous; the creation call returns task metadata rather than media bytes.
 
+### Video 2.5 and 2.5 Flash
+
+Models matching `agnes-video-2.5*` are translated to the documented OpenAI
+Videos-compatible 2.5 contract instead of the V2.0 frame dialect. V2.0 model
+names keep the behavior described above unchanged.
+
+| Classification  | Fields and behavior                                                                                                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pass-through    | `model`, `prompt`, and `seed`                                                                                                                                                                                                                                                               |
+| Translated      | `seconds` accepts a number or numeric string from `4` to `12`, defaults to `4`, and is always sent as a string because the upstream rejects JSON numbers                                                                                                                                    |
+| Translated      | `size` accepts the `720P`, `1080P`, `1K`, and `2K` tiers. The OpenAI pixel sizes map to `720P` plus a ratio (`720x1280`/`1024x1792` → `9:16`, `1280x720`/`1792x1024` → `16:9`); omitting `size` keeps the OpenAI portrait default `720x1280` → `720P`/`9:16`                                |
+| Translated      | `aspect_ratio` defaults to `16:9` for an explicit tier size and is overridden (and reported) when a pixel `size` implies a different ratio. Only `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, and `9:16` are accepted                                                                               |
+| Translated      | `mode` defaults to `keyframe` when `input_reference`, `first_frame`, `last_frame`, or `image` is present, to `reference` when `images`, `audios`, or `videos` is present, and to `text` otherwise. `ti2vid`/`keyframes`/`i2vid` map to `keyframe` and `multi_reference` maps to `reference` |
+| Translated      | JSON or multipart `input_reference`, and the Agnes `image` extension, become `first_frame`; `last_frame`, `images`, `audios`, and `videos` pass through at the top level                                                                                                                    |
+| Agnes extension | `extra_body` members are hoisted to the top level for this dialect; top-level values win and every hoisted conflict or unknown member is reported                                                                                                                                           |
+| Enforced        | `agnes-video-2.5-flash` requires `size: 720P`, at most 5 `images`, at most 3 `audios`, and no `videos` content; violations return `400` before any upstream work                                                                                                                            |
+| Partial         | `num_frames`, `frame_rate`, `width`, `height`, `num_inference_steps`, and `negative_prompt` have no 2.5 equivalent and are reported as ignored                                                                                                                                              |
+
 ## Video retrieval and content
 
 `GET /v1/videos/{video_id}` treats the public path value as the Agnes `video_id`
@@ -150,6 +168,14 @@ retaining Agnes `task_id` as an extension. A 400/404 from the recommended
 endpoint triggers one read-only request to the legacy `/videos/{task_id}` route
 so task IDs returned by older gateway versions remain usable. No ID map or
 database is required.
+
+Video 2.5 and 2.5 Flash only resolve with an exact `model_name`, which a
+stateless gateway cannot infer from a bare video ID. Their creation responses
+therefore expose `id` as `<model>:<video_id>` (for example
+`agnes-video-2.5-flash:task_…`) and retrieval splits that prefix back into the
+`model_name` query parameter. The original `video_id` field is unchanged, and
+V2.0 responses keep `id == video_id`. A model-bound ID never takes the legacy
+fallback because that route only serves V2.0 task IDs.
 
 `GET /v1/videos/{video_id}/content` first obtains current task state. Once a
 successful task has a media URL, the gateway streams that URL with backpressure
@@ -174,10 +200,11 @@ resolve to the video content.
 
 ## Known upstream gaps and deployment limits
 
-- Agnes does not currently document the exact Chat SSE chunk schema, tool-result
-  input messages, or a stable error body. Gated live probes can investigate
-  those upstream shapes, but do not make them part of the gateway contract; the
-  gateway never invents undocumented data.
+- Agnes does not currently document the exact Chat SSE chunk schema or a stable
+  error body. Gated live probes can investigate those upstream shapes, but do
+  not make them part of the gateway contract; the gateway never invents
+  undocumented data. The OpenAI tool-call and tool-result message shape is
+  verified against `agnes-3.0-flash` and is covered by the gated live probe.
 - Agnes image documentation describes input images at two locations; the working
   compatibility contract intentionally sends them at `extra_body.image`. Base64
   output also differs between text-to-image and image-to-image requests.
@@ -186,6 +213,9 @@ resolve to the video content.
   rejected by the legacy route, so the gateway exposes `video_id` as its public
   ID and uses the recommended route. A bounded legacy fallback preserves old
   gateway IDs without an ID map or database.
+- Video 2.5 and 2.5 Flash reject the V2.0 frame fields and return `404` from the
+  stateless query when `model_name` is missing or does not exactly match the
+  creation model, so their public IDs embed that model.
 - Image generation may take 60–360 seconds. Deno Deploy can recycle instances
   and multipart parsing is memory-bound; use Docker for workloads that exceed
   the limits of a selected Deno Deploy plan.
@@ -205,3 +235,7 @@ transient `503` responses, the formal committed scope also passed with that
 mapping, completing M2 contract acceptance. The latest
 [M3 evidence](contract-results/2026-07-18-m3.md) confirms real video creation,
 video-ID terminal polling, completed media resolution, and byte-range download.
+The
+[Agnes 3.0 Flash family evidence](contract-results/2026-09-18-agnes-3-flash-family.md)
+confirms the Chat tool round trip, Image 2.5 generation and editing, and the
+Video 2.5 Flash create/retrieve/content flow with model-qualified polling.

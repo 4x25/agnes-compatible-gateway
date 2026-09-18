@@ -29,13 +29,23 @@ const MESSAGE_ROLES = new Set([
   "developer",
   "user",
   "assistant",
+  "tool",
 ]);
 
-// Agnes documents only these two properties on an input message. Keeping the
-// allowlist at the message boundary is important: OpenAI clients may attach
-// metadata, audio, refusal, or tool-response objects which Agnes has not
-// documented and which may contain sensitive caller data.
-const MESSAGE_FIELDS = new Set(["role", "content"]);
+// Agnes documents `role`/`content` for every message and the OpenAI tool-call
+// continuation fields used by Agnes 3.0 Flash. Keeping the allowlist at the
+// message boundary is important: OpenAI clients may attach metadata, audio,
+// refusal, or other objects which Agnes has not documented and which may
+// contain sensitive caller data.
+const MESSAGE_FIELDS = new Set([
+  "role",
+  "content",
+  "tool_calls",
+  "tool_call_id",
+]);
+
+const TOOL_CALL_FIELDS = new Set(["id", "type", "function"]);
+const TOOL_FUNCTION_FIELDS = new Set(["name", "arguments"]);
 
 export interface TransformedChatRequest {
   body: JsonObject;
@@ -123,19 +133,47 @@ function transformMessages(value: unknown, ignored: Set<string>): JsonObject[] {
     for (const field of collectUnknownFields(message, MESSAGE_FIELDS)) {
       ignored.add(`${param}.${field}`);
     }
-    if (
-      typeof message.role !== "string" || !MESSAGE_ROLES.has(message.role)
-    ) {
+    const role = message.role;
+    if (typeof role !== "string" || !MESSAGE_ROLES.has(role)) {
       throw invalidRequest(
         `'${param}.role' is not supported.`,
         `${param}.role`,
       );
     }
+
+    if (role === "tool") {
+      return transformToolResultMessage(message, param, ignored);
+    }
+
+    if (message.tool_call_id !== undefined) {
+      ignored.add(`${param}.tool_call_id`);
+    }
+    const toolCalls = role === "assistant"
+      ? transformToolCalls(message.tool_calls, `${param}.tool_calls`, ignored)
+      : undefined;
+    if (role !== "assistant" && message.tool_calls !== undefined) {
+      ignored.add(`${param}.tool_calls`);
+    }
+
+    // An assistant continuation message may carry only tool calls, which is
+    // the OpenAI shape Agnes 3.0 Flash accepts for the tool-result round trip.
+    const nullContentAllowed = toolCalls !== undefined && toolCalls.length > 0;
     if (message.content === undefined) {
       throw invalidRequest(
         `'${param}.content' is required.`,
         `${param}.content`,
       );
+    }
+    if (message.content === null) {
+      if (!nullContentAllowed) {
+        throw invalidRequest(
+          `'${param}.content' may be null only for an assistant message with tool calls.`,
+          `${param}.content`,
+        );
+      }
+      const result: JsonObject = { role, content: null };
+      result.tool_calls = toolCalls;
+      return result;
     }
     if (
       typeof message.content !== "string" && !Array.isArray(message.content)
@@ -152,9 +190,105 @@ function transformMessages(value: unknown, ignored: Set<string>): JsonObject[] {
     const content = Array.isArray(message.content)
       ? transformContentParts(message.content, `${param}.content`, ignored)
       : message.content;
-    return {
+    const result: JsonObject = {
       role: message.role === "developer" ? "system" : message.role,
       content,
+    };
+    if (toolCalls !== undefined && toolCalls.length > 0) {
+      result.tool_calls = toolCalls;
+    }
+    return result;
+  });
+}
+
+/** Rebuild an OpenAI tool-result message from its documented continuation fields. */
+function transformToolResultMessage(
+  message: JsonObject,
+  param: string,
+  ignored: Set<string>,
+): JsonObject {
+  if (message.tool_calls !== undefined) ignored.add(`${param}.tool_calls`);
+  const toolCallId = message.tool_call_id;
+  if (typeof toolCallId !== "string" || !toolCallId.trim()) {
+    throw invalidRequest(
+      `'${param}.tool_call_id' is required for tool messages.`,
+      `${param}.tool_call_id`,
+    );
+  }
+  if (typeof message.content !== "string") {
+    throw invalidRequest(
+      `'${param}.content' must be a string for tool messages.`,
+      `${param}.content`,
+    );
+  }
+  return {
+    role: "tool",
+    tool_call_id: toolCallId,
+    content: message.content,
+  };
+}
+
+/**
+ * Keep only the documented OpenAI function-tool call fields so unrelated
+ * upstream or client extensions never reach Agnes or leak into a request.
+ * An empty array is treated as "no tool calls".
+ */
+function transformToolCalls(
+  value: unknown,
+  param: string,
+  ignored: Set<string>,
+): JsonObject[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw invalidRequest(`'${param}' must be an array.`, param);
+  }
+  if (value.length === 0) return undefined;
+  return value.map((call, index) => {
+    const callParam = `${param}.${index}`;
+    if (!isJsonObject(call)) {
+      throw invalidRequest(`'${callParam}' must be an object.`, callParam);
+    }
+    for (const field of collectUnknownFields(call, TOOL_CALL_FIELDS)) {
+      ignored.add(`${callParam}.${field}`);
+    }
+    if (typeof call.id !== "string" || !call.id.trim()) {
+      throw invalidRequest(
+        `'${callParam}.id' must be a non-empty string.`,
+        `${callParam}.id`,
+      );
+    }
+    if (typeof call.type !== "string" || !call.type.trim()) {
+      throw invalidRequest(
+        `'${callParam}.type' must be a non-empty string.`,
+        `${callParam}.type`,
+      );
+    }
+    const fn = call.function;
+    if (!isJsonObject(fn)) {
+      throw invalidRequest(
+        `'${callParam}.function' must be an object.`,
+        `${callParam}.function`,
+      );
+    }
+    for (const field of collectUnknownFields(fn, TOOL_FUNCTION_FIELDS)) {
+      ignored.add(`${callParam}.function.${field}`);
+    }
+    if (typeof fn.name !== "string" || !fn.name.trim()) {
+      throw invalidRequest(
+        `'${callParam}.function.name' must be a non-empty string.`,
+        `${callParam}.function.name`,
+      );
+    }
+    if (typeof fn.arguments !== "string") {
+      throw invalidRequest(
+        `'${callParam}.function.arguments' must be a JSON string.`,
+        `${callParam}.function.arguments`,
+      );
+    }
+    return {
+      id: call.id,
+      type: call.type,
+      function: { name: fn.name, arguments: fn.arguments },
     };
   });
 }

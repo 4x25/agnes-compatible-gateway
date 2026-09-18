@@ -8,6 +8,8 @@
  * prompts, media URLs, Base64 data, or the caller's disposable API key.
  */
 
+import { isAgnesVideo25Model } from "../lib/transforms/videos.ts";
+
 type JsonObject = Record<string, unknown>;
 
 type ProbeScope =
@@ -66,6 +68,11 @@ const TEST_PNG_DATA_URI =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAAQMAAACQp+Od" +
   "AAAAA1BMVEUzZv+f8kW/AAAAD0lEQVQoz2NgGAWjgHwAAAJAAAGMxat3AAAAAElFTkSuQmCC";
 
+// Agnes Video 2.5 requires reference images with a side length of at least 256
+// pixels. This 256x256 solid-color PNG contains no user data.
+const TEST_REFERENCE_PNG_DATA_URI =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAACAElEQVR42u3TQQ0AAAjEsPOEJ/w7gDcaaFIFS5bqgbciAQYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABMIAKGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAbAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGUAEDgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwAFwLA+8X6YGScqAAAAAASUVORK5CYII=";
+
 const config = readConfig();
 
 registerProbe("chat", "Agnes Chat JSON envelope", probeChatJson);
@@ -113,10 +120,10 @@ function readConfig(): LiveConfig {
     baseUrl: normalizeBaseUrl(readEnv("AGNES_BASE_URL") ?? DEFAULT_BASE_URL),
     apiKey,
     scopes: parseScopes(readEnv("AGNES_LIVE_SCOPES") ?? "chat"),
-    chatModel: readEnv("AGNES_LIVE_CHAT_MODEL") ?? "agnes-2.0-flash",
+    chatModel: readEnv("AGNES_LIVE_CHAT_MODEL") ?? "agnes-3.0-flash",
     imageModel: readEnv("AGNES_LIVE_IMAGE_MODEL") ??
-      "agnes-image-2.1-flash",
-    videoModel: readEnv("AGNES_LIVE_VIDEO_MODEL") ?? "agnes-video-v2.0",
+      "agnes-image-2.5-flash",
+    videoModel: readEnv("AGNES_LIVE_VIDEO_MODEL") ?? "agnes-video-2.5-flash",
     waitForVideo: readEnv("AGNES_LIVE_VIDEO_WAIT_FOR_COMPLETION") === "1",
   };
 }
@@ -498,16 +505,31 @@ async function probeImageEdit(): Promise<void> {
 }
 
 async function probeVideo(): Promise<void> {
-  const created = await postJson("video-create", "videos", {
-    model: config.videoModel,
-    prompt: "A blue circle moves slowly across a plain white background.",
-    image: TEST_PNG_DATA_URI,
-    mode: "ti2vid",
-    width: 720,
-    height: 1280,
-    num_frames: 9,
-    frame_rate: 24,
-  });
+  const model25 = isAgnesVideo25Model(config.videoModel);
+  const created = await postJson(
+    "video-create",
+    "videos",
+    model25
+      ? {
+        model: config.videoModel,
+        prompt: "A blue circle moves slowly across a plain white background.",
+        seconds: "4",
+        mode: "keyframe",
+        size: "720P",
+        aspect_ratio: "9:16",
+        first_frame: TEST_REFERENCE_PNG_DATA_URI,
+      }
+      : {
+        model: config.videoModel,
+        prompt: "A blue circle moves slowly across a plain white background.",
+        image: TEST_PNG_DATA_URI,
+        mode: "ti2vid",
+        width: 720,
+        height: 1280,
+        num_frames: 9,
+        frame_rate: 24,
+      },
+  );
   const videoId = expectString(
     created.body.video_id,
     "Video creation must return video_id for documented stateless retrieval.",
@@ -542,12 +564,28 @@ async function probeVideo(): Promise<void> {
       "Video reached a non-success terminal state.",
     );
     const mediaUrl = expectUrl(
-      retrieved.body.url,
+      completedVideoUrl(retrieved.body),
       "A completed video response must contain a valid url.",
     );
     await probeVideoRange(mediaUrl);
   }
   recordShape("video-retrieve", retrieved.response, retrieved.body);
+}
+
+/**
+ * Agnes Video 2.5 reports the completed media URL at `metadata.url`, while the
+ * V2.0 contract returns a top-level `url`. Accept either documented location.
+ */
+function completedVideoUrl(body: JsonObject): unknown {
+  const metadata = body.metadata;
+  if (
+    typeof metadata === "object" && metadata !== null &&
+    !Array.isArray(metadata) &&
+    typeof (metadata as JsonObject).url === "string"
+  ) {
+    return (metadata as JsonObject).url;
+  }
+  return body.url;
 }
 
 function firstChatMessage(body: JsonObject, label: string): JsonObject {
@@ -633,10 +671,13 @@ async function retrieveVideo(videoId: string): Promise<JsonResponse> {
   // Newly-created video IDs can take a moment to appear on the documented
   // stateless retrieval route. Retry only transient reads; generation requests
   // are never retried, so the script cannot create duplicate billable work.
+  const modelQuery = isAgnesVideo25Model(config.videoModel)
+    ? `&model_name=${encodeURIComponent(config.videoModel)}`
+    : "";
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await liveFetchApiRoot(
       "video-retrieve",
-      `agnesapi?video_id=${encodeURIComponent(videoId)}`,
+      `agnesapi?video_id=${encodeURIComponent(videoId)}${modelQuery}`,
       { method: "GET", headers: authorizationHeaders() },
     );
     if (response.status !== 404 || attempt === 2) {

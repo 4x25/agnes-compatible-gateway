@@ -48,12 +48,20 @@ not expose the obsolete `/v1/video/generations` spelling. See the
 [OpenAPI 3.1 document](static/openapi.yaml) for details.
 
 Chat message input is intentionally narrower than the whole OpenAI schema:
-messages contain only `role` and `content`, support `system`, `user`, and
-`assistant` (`developer` is converted to `system`), and reject `tool`
-role/tool-result messages. Top-level `tools` and `tool_choice` remain partially
-compatible pass-through controls. For images, the standard `response_format`
-always overrides the Agnes `return_base64` extension; overridden and unsupported
-paths are reported in `X-Agnes-Gateway-Ignored-Params`.
+messages are rebuilt from documented fields, support `system`, `user`,
+`assistant`, and `tool` (`developer` is converted to `system`), and carry the
+OpenAI `tool_calls`/`tool_call_id` continuation fields used by Agnes 3.0 Flash
+for a complete function-calling round trip. For images, the standard
+`response_format` always overrides the Agnes `return_base64` extension;
+overridden and unsupported paths are reported in
+`X-Agnes-Gateway-Ignored-Params`.
+
+Video requests are translated per model family. Agnes Video 2.5 and 2.5 Flash
+use `seconds`/`size`/`aspect_ratio`/`mode` with named media fields, and their
+public IDs embed the creation model (for example `agnes-video-2.5-flash:task_…`)
+because the documented polling endpoint only resolves with an exact
+`model_name`. Video V2.0 keeps the frame-based
+`num_frames`/`frame_rate`/`width`/`height` contract unchanged.
 
 ## Quick start
 
@@ -87,7 +95,7 @@ curl http://localhost:8000/v1/chat/completions \
   -H 'Authorization: Bearer YOUR_AGNES_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "agnes-2.0-flash",
+    "model": "agnes-3.0-flash",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": false
   }'
@@ -106,7 +114,7 @@ const client = new OpenAI({
 });
 
 const response = await client.chat.completions.create({
-  model: "agnes-2.0-flash",
+  model: "agnes-3.0-flash",
   messages: [{ role: "user", content: "Hello!" }],
 });
 ```

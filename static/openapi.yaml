@@ -213,12 +213,14 @@ paths:
       operationId: createVideo
       summary: Create an asynchronous video generation task
       description: |
-        `seconds` defaults to 4 and maps to 24 fps with
-        `num_frames = seconds * 24 + 1`. `size` defaults to `720x1280` and is
-        split into Agnes width and height. The returned public `id` prefers the
-        Agnes `video_id` used for subsequent stateless gateway calls. These
-        standard fields and their defaults override direct Agnes frame/size
-        controls; a standard `input_reference` overrides Agnes `image` controls.
+        Translation depends on the model family. V2.0 maps `seconds` to 24 fps
+        with `num_frames = seconds * 24 + 1` and splits `size` into Agnes
+        width/height. Models matching `agnes-video-2.5*` send `seconds`, a size
+        tier, `aspect_ratio`, `mode`, and named media fields instead. The
+        returned public `id` drives stateless retrieval and embeds the creation
+        model for the 2.5 family. These standard fields and their defaults
+        override direct Agnes frame/size controls; a standard
+        `input_reference` overrides Agnes `image` controls.
       security:
         - AgnesBearer: []
       requestBody:
@@ -254,12 +256,13 @@ paths:
       operationId: retrieveVideo
       summary: Retrieve or poll a video task
       description: |
-        The path value is the Agnes `video_id` exposed as `id` by creation. The
-        gateway calls the documented stateless `/agnesapi?video_id=...` route
-        and preserves useful Agnes extensions such as `task_id`, `progress`,
+        The path value is the public `id` returned by creation. The gateway
+        calls the documented stateless `/agnesapi?video_id=...` route and
+        preserves useful Agnes extensions such as `task_id`, `progress`,
         `url`, normalized size, and duration. A 400/404 response falls back to
         the legacy task route so IDs returned by older gateway versions remain
-        retrievable.
+        retrievable; 2.5-family IDs embed the creation model and never use that
+        fallback.
       security:
         - AgnesBearer: []
       responses:
@@ -381,7 +384,11 @@ components:
       name: video_id
       in: path
       required: true
-      description: Agnes `video_id`, exposed as `id` by video creation.
+      description: |
+        Public video `id` returned by creation. For models matching
+        `agnes-video-2.5*` this is `<model>:<video_id>`; the gateway splits the
+        prefix back into the exact `model_name` query parameter those models
+        require. Other models expose the bare Agnes `video_id`.
       schema:
         type: string
         minLength: 1
@@ -582,7 +589,8 @@ components:
           type: array
           description: |
             Partially compatible. Forwarded without nested schema conversion after
-            array validation; tool-result messages are not accepted by ChatMessage.
+            array validation. Tool results are returned as a `tool` ChatMessage
+            referencing the assistant `tool_calls` id.
           items:
             type: object
             additionalProperties: true
@@ -607,17 +615,22 @@ components:
     ChatMessage:
       type: object
       description: |
-        Only `role` and `content` are sent upstream. Unknown message properties
-        such as `name`, `tool_calls`, and `tool_call_id` are removed and reported.
-        A `tool` role/tool-result message is rejected with `400`.
+        Messages are rebuilt from documented properties only. Unknown message
+        properties such as `name`, audio, refusal, and metadata are removed and
+        reported. Assistant `tool_calls` and `tool` result messages complete the
+        OpenAI function-calling round trip documented for Agnes 3.0 Flash.
       required: [role, content]
       properties:
         role:
           type: string
-          enum: [developer, system, user, assistant]
+          enum: [developer, system, user, assistant, tool]
           description: "`developer` is translated to Agnes `system`."
         content:
+          description: |
+            `null` is accepted only on an assistant message that carries at
+            least one `tool_calls` entry.
           oneOf:
+            - type: "null"
             - type: string
             - type: array
               minItems: 1
@@ -629,6 +642,41 @@ components:
                 oneOf:
                   - $ref: "#/components/schemas/ChatTextContentPart"
                   - $ref: "#/components/schemas/ChatImageContentPart"
+        tool_calls:
+          type: array
+          description: |
+            Assistant-only. Each call is rebuilt from `id`, `type`, and
+            `function.name`/`function.arguments`; unknown nested fields are
+            removed and reported.
+          items:
+            $ref: "#/components/schemas/ChatToolCall"
+        tool_call_id:
+          type: string
+          minLength: 1
+          description: Required on `tool` messages and ignored elsewhere.
+      additionalProperties: true
+
+    ChatToolCall:
+      type: object
+      required: [id, type, function]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          minLength: 1
+        function:
+          type: object
+          required: [name, arguments]
+          properties:
+            name:
+              type: string
+              minLength: 1
+            arguments:
+              type: string
+              description: Serialized JSON arguments as produced by the model.
+          additionalProperties: true
       additionalProperties: true
 
     ChatTextContentPart:
@@ -895,7 +943,10 @@ components:
       type: object
       description: |
         Supported video-create input. Unknown top-level fields are removed and
-        reported. Explicit Agnes extensions and overridden controls are marked below.
+        reported. The translation depends on the model family: models matching
+        `agnes-video-2.5*` use the 2.5 contract described on `seconds`, `size`,
+        `aspect_ratio`, `mode`, and the named media fields below, while every
+        other model keeps the frame-based V2.0 contract.
       required: [model, prompt]
       properties:
         model:
@@ -906,20 +957,64 @@ components:
           type: string
           minLength: 1
         seconds:
+          description: |
+            V2.0 accepts `4`, `8`, or `12`. The 2.5 family accepts any integer
+            from `4` to `12` (number or numeric string) and always receives a
+            string upstream. Defaults to `4`.
           oneOf:
             - type: integer
-              enum: [4, 8, 12]
+              minimum: 4
+              maximum: 12
             - type: string
-              enum: ["4", "8", "12"]
           default: 4
         size:
           type: string
-          enum: [720x1280, 1280x720, 1024x1792, 1792x1024]
+          description: |
+            V2.0 accepts the four OpenAI pixel sizes. The 2.5 family also
+            accepts the `720P`, `1080P`, `1K`, and `2K` tiers, and maps pixel
+            sizes to `720P` plus a ratio. `agnes-video-2.5-flash` requires
+            `720P`.
+          examples: [720x1280, 1280x720, 1024x1792, 1792x1024, 720P, 2K]
           default: 720x1280
+        aspect_ratio:
+          type: string
+          description: |
+            2.5 family only. Defaults to `16:9` for an explicit tier size and
+            is overridden by a pixel `size`.
+          enum: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+        first_frame:
+          type: string
+          description: 2.5 keyframe media. Public image URL or Data URI.
+        last_frame:
+          type: string
+          description: 2.5 keyframe media. Public image URL or Data URI.
+        images:
+          type: array
+          description: |
+            2.5 reference images. `agnes-video-2.5-flash` accepts at most 5 and
+            rejects more locally with `400`.
+          items:
+            type: string
+        audios:
+          type: array
+          description: |
+            2.5 reference audio. `agnes-video-2.5-flash` accepts at most 3 and
+            rejects more locally with `400`.
+          items:
+            type: string
+        videos:
+          type: array
+          description: |
+            2.5 reference videos. Not supported by `agnes-video-2.5-flash`,
+            which rejects non-empty content locally with `400`.
+          items:
+            type: object
+            additionalProperties: true
         input_reference:
           description: |
             Standard OpenAI input image. Overrides Agnes `image` and
-            `extra_body.image` extensions when supplied.
+            `extra_body.image` extensions when supplied, and becomes the 2.5
+            `first_frame` for 2.5-family models.
           oneOf:
             - type: string
               description: Public image URL or Data URI.
@@ -943,7 +1038,10 @@ components:
           description: Agnes public-image URL/Data URI extension; overridden by `input_reference`.
         mode:
           type: string
-          description: Agnes extension, such as `ti2vid` or `keyframes`.
+          description: |
+            V2.0 accepts values such as `ti2vid` or `keyframes`. The 2.5 family
+            defaults to `text`, `keyframe`, or `reference` from the supplied
+            media and normalizes those aliases.
         seed:
           type: integer
           description: Agnes deterministic-seed extension.
@@ -968,6 +1066,9 @@ components:
           description: Agnes extension overridden and reported because standard `seconds` always maps at 24 fps.
         extra_body:
           $ref: "#/components/schemas/VideoExtraBody"
+          description: |
+            2.5-family requests hoist recognized members to the top level;
+            top-level values win and conflicts are reported.
       additionalProperties: true
 
     VideoExtraBody:
@@ -986,6 +1087,10 @@ components:
 
     VideoCreateMultipartRequest:
       type: object
+      description: |
+        Multipart form variant of the video-create request. Field semantics
+        match VideoCreateRequest, including the model-family dialect above.
+        `videos` and `audios` are JSON-encoded arrays.
       required: [model, prompt]
       properties:
         model:
@@ -994,12 +1099,30 @@ components:
           type: string
         seconds:
           type: string
-          enum: ["4", "8", "12"]
+          description: "`4`–`12` for the 2.5 family; `4`, `8`, or `12` for V2.0."
           default: "4"
         size:
           type: string
-          enum: [720x1280, 1280x720, 1024x1792, 1792x1024]
+          description: An OpenAI pixel size, or a 2.5 size tier such as `720P`.
           default: 720x1280
+        aspect_ratio:
+          type: string
+          description: 2.5-family aspect ratio.
+        first_frame:
+          type: string
+          description: 2.5 keyframe media URL or Data URI.
+        last_frame:
+          type: string
+          description: 2.5 keyframe media URL or Data URI.
+        images:
+          type: string
+          description: JSON-encoded array of 2.5 reference image URLs.
+        audios:
+          type: string
+          description: JSON-encoded array of 2.5 reference audio URLs.
+        videos:
+          type: string
+          description: JSON-encoded array of 2.5 reference video objects.
         input_reference:
           type: string
           format: binary
@@ -1047,7 +1170,10 @@ components:
       properties:
         id:
           type: string
-          description: Agnes video ID used in gateway retrieval paths.
+          description: |
+            Public video ID used in gateway retrieval paths. V2.0 responses
+            expose Agnes `video_id`; 2.5-family responses expose
+            `<model>:<video_id>`.
         task_id:
           type: string
           description: Agnes task identity retained as an extension.
@@ -1074,6 +1200,12 @@ components:
             - type: string
         size:
           type: string
+        metadata:
+          type: [object, "null"]
+          description: |
+            2.5-family task metadata. A completed task reports its media URL at
+            `metadata.url`.
+          additionalProperties: true
         url:
           type: [string, "null"]
           format: uri

@@ -44,11 +44,17 @@ Docker 镜像。
 拼写。完整规则见[兼容矩阵](docs/compatibility.zh-CN.md) 与
 [OpenAPI 3.1](static/openapi.yaml)。
 
-Chat 消息输入有意小于完整 OpenAI schema：每条消息仅保留 `role` 与 `content`，
-支持 `system`、`user`、`assistant`（`developer` 转换为 `system`），拒绝 `tool`
-角色/工具结果消息。顶层 `tools`、`tool_choice` 仍为部分兼容的透传控制项。
-图片请求中，标准 `response_format` 始终覆盖 Agnes 的 `return_base64` 扩展；
-被覆盖及不支持的路径通过 `X-Agnes-Gateway-Ignored-Params` 报告。
+Chat 消息输入有意小于完整 OpenAI schema：每条消息都按已文档化字段重建，支持
+`system`、`user`、`assistant`、`tool`（`developer` 转换为 `system`），并透传
+Agnes 3.0 Flash 工具闭环所需的 `tool_calls`/`tool_call_id`。图片请求中，标准
+`response_format` 始终覆盖 Agnes 的 `return_base64` 扩展；被覆盖及不支持的路径
+通过 `X-Agnes-Gateway-Ignored-Params` 报告。
+
+视频请求按模型家族转换。Agnes Video 2.5 与 2.5 Flash 使用
+`seconds`/`size`/`aspect_ratio`/`mode` 及具名媒体字段；其公开 ID 会携带创建模型
+（例如 `agnes-video-2.5-flash:task_…`），因为文档中的查询接口必须传入精确的
+`model_name` 才能解析任务。Video V2.0 继续使用
+`num_frames`/`frame_rate`/`width`/`height` 帧参数契约，行为不变。
 
 ## 快速开始
 
@@ -81,7 +87,7 @@ curl http://localhost:8000/v1/chat/completions \
   -H 'Authorization: Bearer YOUR_AGNES_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "agnes-2.0-flash",
+    "model": "agnes-3.0-flash",
     "messages": [{"role": "user", "content": "你好！"}],
     "stream": false
   }'
@@ -99,7 +105,7 @@ const client = new OpenAI({
 });
 
 const response = await client.chat.completions.create({
-  model: "agnes-2.0-flash",
+  model: "agnes-3.0-flash",
   messages: [{ role: "user", content: "你好！" }],
 });
 ```

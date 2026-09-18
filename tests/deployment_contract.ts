@@ -7,6 +7,8 @@
  * gates because image and video scopes create real upstream work.
  */
 
+import { isAgnesVideo25Model } from "../lib/transforms/videos.ts";
+
 type JsonObject = Record<string, unknown>;
 
 type ProbeScope = "health" | "chat-sse" | "image-upload" | "video";
@@ -41,6 +43,11 @@ const TEST_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABAAQMAAACQp+Od" +
   "AAAAA1BMVEUzZv+f8kW/AAAAD0lEQVQoz2NgGAWjgHwAAAJAAAGMxat3AAAAAElFTkSuQmCC";
 const TEST_PNG_DATA_URI = `data:image/png;base64,${TEST_PNG_BASE64}`;
 
+// Agnes Video 2.5 requires reference images with a side length of at least 256
+// pixels. This 256x256 solid-color PNG contains no user data.
+const TEST_REFERENCE_PNG_DATA_URI =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAACAElEQVR42u3TQQ0AAAjEsPOEJ/w7gDcaaFIFS5bqgbciAQYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABMIAKGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAbAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGUAEDgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwAFwLA+8X6YGScqAAAAAASUVORK5CYII=";
+
 const config = readConfig();
 await runSelectedProbes();
 
@@ -71,10 +78,10 @@ function readConfig(): DeploymentConfig {
     baseUrl: normalizeBaseUrl(rawBaseUrl),
     apiKey,
     scopes,
-    chatModel: readEnv("AGNES_LIVE_CHAT_MODEL") ?? "agnes-2.0-flash",
+    chatModel: readEnv("AGNES_LIVE_CHAT_MODEL") ?? "agnes-3.0-flash",
     imageModel: readEnv("AGNES_LIVE_IMAGE_MODEL") ??
-      "agnes-image-2.1-flash",
-    videoModel: readEnv("AGNES_LIVE_VIDEO_MODEL") ?? "agnes-video-v2.0",
+      "agnes-image-2.5-flash",
+    videoModel: readEnv("AGNES_LIVE_VIDEO_MODEL") ?? "agnes-video-2.5-flash",
   };
 }
 
@@ -292,13 +299,27 @@ async function probeImageUpload(): Promise<void> {
 }
 
 async function probeVideo(): Promise<void> {
-  const created = await postJson("video-create", "v1/videos", {
-    model: config.videoModel,
-    prompt: "A blue circle moves slowly across a plain white background.",
-    input_reference: TEST_PNG_DATA_URI,
-    seconds: "4",
-    size: "720x1280",
-  });
+  const created = await postJson(
+    "video-create",
+    "v1/videos",
+    isAgnesVideo25Model(config.videoModel)
+      ? {
+        model: config.videoModel,
+        prompt: "A blue circle moves slowly across a plain white background.",
+        seconds: "4",
+        mode: "keyframe",
+        size: "720P",
+        aspect_ratio: "9:16",
+        first_frame: TEST_REFERENCE_PNG_DATA_URI,
+      }
+      : {
+        model: config.videoModel,
+        prompt: "A blue circle moves slowly across a plain white background.",
+        input_reference: TEST_PNG_DATA_URI,
+        seconds: "4",
+        size: "720x1280",
+      },
+  );
   assertGatewayHeaders(created.response);
   const videoId = expectString(
     created.body.id,

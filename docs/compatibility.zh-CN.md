@@ -2,11 +2,12 @@
 
 [English](compatibility.md)
 
-调研基线：**2026-07-16**。本文描述网关有意提供的公开契约，依据 Agnes
-[对话](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash.md)、
-[图像](https://agnes-ai.com/zh-Hans/docs/agnes-image-21-flash.md)和
-[视频](https://agnes-ai.com/zh-Hans/docs/agnes-video-v20.md)文档，以及 OpenAI
-官方当前的
+调研基线：**2026-09-18**。本文描述网关有意提供的公开契约，依据 Agnes
+[对话](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash.md)、
+[图像](https://agnes-ai.com/zh-Hans/docs/agnes-image-25-flash.md)、
+[视频 2.5](https://agnes-ai.com/zh-Hans/docs/agnes-video-25-flash.md) 与
+[视频 V2.0](https://agnes-ai.com/zh-Hans/docs/agnes-video-v20.md)文档，以及
+OpenAI 官方当前的
 [Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、
 [Images](https://developers.openai.com/api/reference/resources/images/methods/generate)与
 [Videos](https://developers.openai.com/api/reference/resources/videos/methods/create)
@@ -50,20 +51,20 @@ HTTP 参考。
 
 `POST /v1/chat/completions`
 
-| 分类       | 字段与行为                                                                                                                                                                 |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 透传       | `model`、`temperature`、`top_p`、`max_tokens`、`stream`                                                                                                                    |
-| 转换       | `max_completion_tokens` → `max_tokens`；`developer` 消息角色 → `system`；每条消息只用 `role` 与 `content` 重建                                                             |
-| 部分兼容   | 转换后的消息角色仅支持 `system`、`user`、`assistant`。内容可为字符串，或由 `text`、公开 `image_url` 组成的数组；混合数组中的不支持块会被丢弃，完全没有可用块时返回 `400`。 |
-| 部分兼容   | 顶层 `tools`、`tool_choice` 完成容器类型校验后透传。Agnes 记录了工具请求，但网关不支持工具结果消息，因此无法完成 OpenAI 工具结果往返。                                     |
-| Agnes 扩展 | `chat_template_kwargs`、`thinking`                                                                                                                                         |
-| 丢弃       | 未知顶层控制项与未知消息/内容块嵌套字段会按完整路径报告后移除，包括消息的 `name`、`tool_calls`、`tool_call_id`、音频、refusal、metadata 和图片 detail。                    |
-| 拒绝       | `tool` 角色/工具结果消息、其他未记录角色、缺少 `content` 或内容格式非法均返回 `400`；网关不会伪造替代消息。                                                                |
+| 分类       | 字段与行为                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 透传       | `model`、`temperature`、`top_p`、`max_tokens`、`stream`                                                                                                                  |
+| 转换       | `max_completion_tokens` → `max_tokens`；`developer` 消息角色 → `system`；每条消息只用文档确认的字段重建                                                                  |
+| 部分兼容   | 消息角色支持 `system`、`user`、`assistant`、`tool`。内容可为字符串，或由 `text`、公开 `image_url` 组成的数组；混合数组中的不支持块会被丢弃，完全没有可用块时返回 `400`。 |
+| 转换       | assistant 的 `tool_calls` 与带 `tool_call_id` 的 tool 结果消息构成 Agnes 3.0 Flash 文档记载的 OpenAI 函数调用闭环；assistant 携带工具调用时 `content` 允许为 `null`。    |
+| Agnes 扩展 | `chat_template_kwargs`、`thinking`                                                                                                                                       |
+| 丢弃       | 未知顶层控制项与未知消息/内容块/工具调用嵌套字段会按完整路径报告后移除，包括消息的 `name`、音频、refusal、metadata 和图片 detail。                                       |
+| 拒绝       | 其他未记录角色、缺少 `tool_call_id` 的 `tool` 消息、非工具调用 assistant 缺少 `content` 或内容格式非法均返回 `400`；网关不会伪造替代消息。                               |
 
 同时提供 `max_completion_tokens` 和 `max_tokens` 时以前者为准。SSE 响应按
 具有背压的字节流透传，包括上游 `[DONE]`；网关不合成 usage 分块，也不重新解释
-工具调用输出。由于只向上游发送 Agnes 文档确认的消息字段，在 Agnes 记录且网关
-实现工具结果消息契约前，调用方应在本接口之外执行工具调用。
+工具调用输出。工具调用由调用方执行，随后可在下一次请求中回传经过校验的 OpenAI
+续接字段。
 
 ## 图像生成
 
@@ -125,6 +126,23 @@ OpenAI `seconds`、`size`（包括其默认值）优先于 Agnes 的 `num_frames
 `input_reference` 同样覆盖 Agnes 的 `image` 与 `extra_body.image` 控制项。
 视频生成是异步任务，创建请求返回任务元数据而非视频字节。
 
+### Video 2.5 与 2.5 Flash
+
+模型名匹配 `agnes-video-2.5*` 时改用文档记载的 OpenAI Videos 兼容 2.5 契约，
+不再使用 V2.0 帧参数；V2.0 模型名的行为完全不变。
+
+| 分类       | 字段与行为                                                                                                                                                                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 透传       | `model`、`prompt`、`seed`                                                                                                                                                                                                                       |
+| 转换       | `seconds` 接受 `4`–`12` 的整数或数字字符串，缺省为 `4`，并始终以字符串发送（上游拒绝 JSON 数字）                                                                                                                                                |
+| 转换       | `size` 接受 `720P`、`1080P`、`1K`、`2K` 档位；OpenAI 像素尺寸映射为 `720P` 加比例（`720x1280`/`1024x1792` → `9:16`、`1280x720`/`1792x1024` → `16:9`）；缺省保持 OpenAI 竖屏默认 `720x1280` → `720P`/`9:16`                                      |
+| 转换       | `aspect_ratio` 在显式档位尺寸下缺省为 `16:9`；像素 `size` 推导出的比例会覆盖并报告冲突值。仅接受 `21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16`                                                                                                    |
+| 转换       | `mode` 默认值：存在 `input_reference`/`first_frame`/`last_frame`/`image` 时为 `keyframe`，存在 `images`/`audios`/`videos` 时为 `reference`，否则为 `text`。`ti2vid`/`keyframes`/`i2vid` 映射为 `keyframe`，`multi_reference` 映射为 `reference` |
+| 转换       | JSON 或 multipart 的 `input_reference` 以及 Agnes `image` 扩展 → `first_frame`；`last_frame`、`images`、`audios`、`videos` 在顶层透传                                                                                                           |
+| Agnes 扩展 | 该方言会把 `extra_body` 成员提升到顶层；顶层值优先，所有冲突与未知成员都会被报告                                                                                                                                                                |
+| 强制校验   | `agnes-video-2.5-flash` 要求 `size: 720P`，`images` 最多 5 张，`audios` 最多 3 段，且不接受 `videos`；违规会在请求上游前返回 `400`                                                                                                              |
+| 部分兼容   | `num_frames`、`frame_rate`、`width`、`height`、`num_inference_steps`、`negative_prompt` 在 2.5 中无对应字段，会报告为已忽略                                                                                                                     |
+
 ## 视频查询与内容下载
 
 `GET /v1/videos/{video_id}` 将公开路径参数视为创建响应中的 Agnes `video_id`，
@@ -132,6 +150,12 @@ OpenAI `seconds`、`size`（包括其默认值）优先于 Agnes 的 `num_frames
 OpenAI 风格的 `id`，同时保留 Agnes `task_id` 扩展。推荐接口返回 400/404
 时，网关会只读调用一次旧版 `/videos/{task_id}`，使旧版网关曾返回的 task ID
 仍可查询；整个过程无需 ID 映射或数据库。
+
+Video 2.5 与 2.5 Flash 的查询必须携带精确的 `model_name`，无状态网关无法从裸
+video ID 推断该值。因此它们的创建响应把 `id` 暴露为 `<model>:<video_id>`（例如
+`agnes-video-2.5-flash:task_…`），查询时再拆回 `model_name` 参数。原始
+`video_id` 字段保持不变，V2.0 响应仍为 `id == video_id`。带模型前缀的 ID
+不会触发旧版 回退，因为旧版路由只适用于 V2.0 task ID。
 
 `GET /v1/videos/{video_id}/content` 先获取任务状态。任务成功且存在媒体 URL
 后，网关以具有背压的流代理内容，并转发调用方 `Range`。如果媒体存储属于
@@ -154,15 +178,18 @@ OpenAI 风格错误。
 
 ## 已知上游差异与部署限制
 
-- Agnes 尚未记录 Chat SSE 的精确分块 schema、工具结果输入消息和稳定错误体。
-  受控实时探测可以调查这些上游格式，但不会因此自动扩展网关公开契约；网关不会
-  编造未记录的数据。
+- Agnes 尚未记录 Chat SSE 的精确分块 schema 和稳定错误体。受控实时探测可以
+  调查这些上游格式，但不会因此自动扩展网关公开契约；网关不会编造未记录的数据。
+  OpenAI 工具调用与工具结果消息格式已针对 `agnes-3.0-flash` 实测验证，并纳入
+  受控实时探测。
 - Agnes 图像文档在两个位置描述输入图片；网关明确选择
   `extra_body.image`。文生图和图生图的 Base64 输出控制方式也不同。
 - Agnes 同时记录推荐的 `/agnesapi?video_id=…` 与旧版
   `/v1/videos/{task_id}`。实时测试发现新建任务会被旧版路由拒绝，因此网关将
   `video_id` 作为公开 ID 并使用推荐路由；有限的旧版回退可兼容历史网关 ID，
   同时仍不需要 ID 表或数据库。
+- Video 2.5 与 2.5 Flash 拒绝 V2.0 帧参数；无状态查询缺少 `model_name` 或与
+  创建模型不完全一致时返回 `404`，因此其公开 ID 会携带该模型名。
 - 图片生成可能需要 60–360 秒。Deno Deploy 可能回收实例，multipart 解析
   受内存约束；超出所选 Deno Deploy 套餐限制的负载应使用 Docker。
 - 网关不施加账户配额，但 Agnes 或部署平台仍可能返回 `429`、尺寸限制或超时。
@@ -177,3 +204,6 @@ Data URI 图片编辑信封。证据还记录了文档规定的 `return_base64` 
 临时 `503` 后，提交后的正式 scope 也使用该映射通过，完成 M2 契约验收。最新的
 [M3 证据](contract-results/2026-07-18-m3.zh-CN.md)确认了真实视频创建、video-ID
 终态轮询、成品媒体解析与字节范围下载。
+[Agnes 3.0 Flash 系列证据](contract-results/2026-09-18-agnes-3-flash-family.zh-CN.md)
+进一步确认了 Chat 工具闭环、Image 2.5 生成与编辑，以及带模型限定查询的 Video 2.5
+Flash 创建/查询/下载全流程。

@@ -22,7 +22,10 @@ import {
 } from "./http.ts";
 import { transformChatRequest } from "./transforms/chat.ts";
 import { transformImageRequest } from "./transforms/images.ts";
-import { transformVideoRequest } from "./transforms/videos.ts";
+import {
+  isAgnesVideo25Model,
+  transformVideoRequest,
+} from "./transforms/videos.ts";
 import type {
   GatewayConfig,
   GatewayOptions,
@@ -225,9 +228,9 @@ export class AgnesOpenAIGateway {
   handleVideoRetrieval(request: Request, videoId: string): Promise<Response> {
     return this.handle(request, async (context) => {
       const authorization = requireBearerAuthorization(request);
-      validateVideoId(videoId);
+      const address = parseVideoAddress(videoId);
       const upstream = await this.requestVideoMetadata(
-        videoId,
+        address,
         authorization,
         request.signal,
       );
@@ -247,7 +250,7 @@ export class AgnesOpenAIGateway {
   handleVideoContent(request: Request, videoId: string): Promise<Response> {
     return this.handle(request, async (context) => {
       const authorization = requireBearerAuthorization(request);
-      validateVideoId(videoId);
+      const address = parseVideoAddress(videoId);
       const requestUrl = new URL(request.url);
       for (const [name, value] of requestUrl.searchParams) {
         if (name !== "variant" || value !== "video") {
@@ -256,7 +259,7 @@ export class AgnesOpenAIGateway {
       }
 
       const metadataResponse = await this.requestVideoMetadata(
-        videoId,
+        address,
         authorization,
         request.signal,
       );
@@ -318,19 +321,28 @@ export class AgnesOpenAIGateway {
    * Gateways released before the live contract check exposed Agnes task IDs as
    * their public IDs. A bounded read-only fallback on 400/404 keeps those IDs
    * usable while all newly-created responses prefer the documented video ID.
+   *
+   * Video 2.5 and 2.5 Flash only resolve when the query carries the exact
+   * creation model, so their public IDs embed it and never take the legacy
+   * fallback (which only serves V2.0 task IDs).
    */
   private async requestVideoMetadata(
-    videoId: string,
+    address: VideoAddress,
     authorization: string,
     signal: AbortSignal,
   ): Promise<Response> {
+    let query = `video_id=${encodeURIComponent(address.videoId)}`;
+    if (address.modelName) {
+      query += `&model_name=${encodeURIComponent(address.modelName)}`;
+    }
     const recommended = await this.client.requestApiRoot(
-      `agnesapi?video_id=${encodeURIComponent(videoId)}`,
+      `agnesapi?${query}`,
       authorization,
       { signal },
     );
     if (
       recommended.ok ||
+      address.modelName !== undefined ||
       (recommended.status !== 400 && recommended.status !== 404)
     ) {
       return recommended;
@@ -338,7 +350,7 @@ export class AgnesOpenAIGateway {
 
     await cancelResponseBody(recommended);
     return await this.client.request(
-      `videos/${encodeURIComponent(videoId)}`,
+      `videos/${encodeURIComponent(address.videoId)}`,
       authorization,
       { signal },
     );
@@ -481,10 +493,16 @@ const VIDEO_MULTIPART_FIELDS = new Set([
   "prompt",
   "seconds",
   "size",
+  "aspect_ratio",
   "input_reference",
   "input_reference[image_url]",
   "input_reference[file_id]",
   "image",
+  "first_frame",
+  "last_frame",
+  "images",
+  "audios",
+  "videos",
   "mode",
   "height",
   "width",
@@ -555,24 +573,31 @@ async function readUpstreamJson(
 }
 
 function normalizeVideoMetadata(input: JsonObject): JsonObject {
-  const id = typeof input.video_id === "string" && input.video_id
+  const videoId = typeof input.video_id === "string" && input.video_id
     ? input.video_id
     : typeof input.id === "string" && input.id
     ? input.id
     : typeof input.task_id === "string" && input.task_id
     ? input.task_id
     : null;
+  if (!videoId) return input;
   // Prefer video_id so the public ID is directly retrievable through Agnes's
   // documented stateless query endpoint. Keep task_id and the original fields
   // as Agnes extensions for diagnostics and backward compatibility.
-  return id && input.id !== id ? { ...input, id } : input;
+  //
+  // The 2.5 family only resolves with an exact `model_name`, so its public ID
+  // carries the creation model. V2.0 IDs and responses stay unchanged.
+  const model = typeof input.model === "string" ? input.model : "";
+  const id = isAgnesVideo25Model(model) ? `${model}:${videoId}` : videoId;
+  return input.id !== id ? { ...input, id } : input;
 }
 
 function findVideoUrl(metadata: JsonObject): string | null {
   for (const candidate of [metadata.url, metadata.output_url]) {
     if (typeof candidate === "string" && candidate) return candidate;
   }
-  for (const key of ["data", "video", "output"]) {
+  // Agnes Video 2.5 returns the completed media URL at `metadata.url`.
+  for (const key of ["data", "video", "output", "metadata"]) {
     const nested = metadata[key];
     if (isJsonObject(nested) && typeof nested.url === "string" && nested.url) {
       return nested.url;
@@ -581,13 +606,60 @@ function findVideoUrl(metadata: JsonObject): string | null {
   return null;
 }
 
-function validateVideoId(videoId: string): void {
-  if (!videoId || videoId.length > 512) {
+interface VideoAddress {
+  /** Present only for model-bound 2.5 IDs that require an exact model_name. */
+  modelName?: string;
+  videoId: string;
+}
+
+/**
+ * Split an optional `<model>:<video_id>` prefix from a public video ID.
+ * Plain V2.0 video IDs and legacy task IDs pass through unchanged.
+ */
+function parseVideoAddress(value: string): VideoAddress {
+  if (!value || value.length > 1024) {
     throw new GatewayError(400, "'video_id' is invalid.", {
       param: "video_id",
       code: "invalid_video_id",
     });
   }
+  const direct = splitVideoAddress(value);
+  if (direct.modelName !== undefined) return direct;
+  // A runtime that hands over a still-encoded path segment would otherwise
+  // lose the model prefix. Only a literal `%3A` triggers the extra decode, so
+  // normal IDs and Data-URI-safe base64 values are never re-decoded.
+  if (/%3a/i.test(value)) {
+    let decoded: string | undefined;
+    try {
+      decoded = decodeURIComponent(value);
+    } catch {
+      decoded = undefined;
+    }
+    if (decoded !== undefined) {
+      const fromDecoded = splitVideoAddress(decoded);
+      if (fromDecoded.modelName !== undefined) return fromDecoded;
+    }
+  }
+  if (value.length > 512) {
+    throw new GatewayError(400, "'video_id' is invalid.", {
+      param: "video_id",
+      code: "invalid_video_id",
+    });
+  }
+  return { videoId: value };
+}
+
+function splitVideoAddress(value: string): VideoAddress {
+  const separator = value.indexOf(":");
+  if (separator <= 0) return { videoId: value };
+  const modelName = value.slice(0, separator);
+  const videoId = value.slice(separator + 1);
+  if (
+    !videoId || videoId.length > 512 || !isAgnesVideo25Model(modelName)
+  ) {
+    return { videoId: value };
+  }
+  return { modelName, videoId };
 }
 
 /** Create a gateway instance, optionally injecting an upstream fetch function. */

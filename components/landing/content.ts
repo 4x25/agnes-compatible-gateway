@@ -37,11 +37,11 @@ export const ENDPOINTS: EndpointDefinition[] = [
 ];
 
 export const DEFAULT_MODELS: Record<Workflow, string> = {
-  chat: "agnes-2.0-flash",
-  image: "agnes-image-2.1-flash",
-  edit: "agnes-image-2.1-flash",
-  textVideo: "agnes-video-v2.0",
-  imageVideo: "agnes-video-v2.0",
+  chat: "agnes-3.0-flash",
+  image: "agnes-image-2.5-flash",
+  edit: "agnes-image-2.5-flash",
+  textVideo: "agnes-video-2.5-flash",
+  imageVideo: "agnes-video-2.5-flash",
 };
 
 /**

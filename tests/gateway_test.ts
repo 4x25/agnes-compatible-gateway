@@ -95,7 +95,7 @@ Deno.test("chat maps developer and max_completion_tokens and reports ignored fie
   });
 });
 
-Deno.test("chat message allowlist drops undocumented nested fields", async () => {
+Deno.test("chat message allowlist keeps tool calls and drops unrelated fields", async () => {
   let upstreamBody: JsonObject | undefined;
   const gateway = createGateway({
     agnesBaseUrl: BASE_URL,
@@ -110,8 +110,13 @@ Deno.test("chat message allowlist drops undocumented nested fields", async () =>
       model: "chat",
       messages: [{
         role: "assistant",
-        content: "hello",
-        tool_calls: [{ id: "call_secret", type: "function" }],
+        content: null,
+        tool_calls: [{
+          id: "call_1",
+          type: "function",
+          function: { name: "lookup", arguments: "{}", extra: "drop" },
+          index: 0,
+        }],
         refusal: "private refusal",
         audio: { id: "audio_secret" },
       }],
@@ -121,11 +126,16 @@ Deno.test("chat message allowlist drops undocumented nested fields", async () =>
   assertEquals(response.status, 200);
   assertEquals(upstreamBody?.messages, [{
     role: "assistant",
-    content: "hello",
+    content: null,
+    tool_calls: [{
+      id: "call_1",
+      type: "function",
+      function: { name: "lookup", arguments: "{}" },
+    }],
   }]);
   assertEquals(
     response.headers.get("x-agnes-gateway-ignored-params"),
-    "messages.0.audio,messages.0.refusal,messages.0.tool_calls",
+    "messages.0.audio,messages.0.refusal,messages.0.tool_calls.0.function.extra,messages.0.tool_calls.0.index",
   );
 });
 
@@ -157,7 +167,58 @@ Deno.test("ignored-parameter headers redact unsafe names and cap their size", as
   assertStringIncludes(ignored, "<truncated>");
 });
 
-Deno.test("chat rejects undocumented tool-response messages", async () => {
+Deno.test("chat forwards OpenAI tool-call and tool-result messages", async () => {
+  const bodies: JsonObject[] = [];
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(Response.json({ choices: [] }));
+    },
+  });
+  const toolCall = {
+    id: "call_1",
+    type: "function",
+    function: { name: "get_weather", arguments: '{"city":"上海"}' },
+  };
+  const requested = await gateway.handleChatCompletions(jsonRequest(
+    "/v1/chat/completions",
+    {
+      model: "chat",
+      messages: [
+        { role: "user", content: "上海天气？" },
+        { role: "assistant", content: null, tool_calls: [toolCall] },
+        {
+          role: "tool",
+          tool_call_id: "call_1",
+          content: "sunny",
+          name: "get_weather",
+        },
+      ],
+      tools: [{
+        type: "function",
+        function: {
+          name: "get_weather",
+          parameters: { type: "object", properties: {} },
+        },
+      }],
+      tool_choice: "auto",
+    },
+  ));
+
+  assertEquals(requested.status, 200);
+  assertEquals(bodies[0].messages, [
+    { role: "user", content: "上海天气？" },
+    { role: "assistant", content: null, tool_calls: [toolCall] },
+    { role: "tool", tool_call_id: "call_1", content: "sunny" },
+  ]);
+  assertEquals(
+    requested.headers.get("x-agnes-gateway-ignored-params"),
+    "messages.2.name",
+  );
+});
+
+Deno.test("chat rejects malformed tool continuations locally", async () => {
   let calls = 0;
   const gateway = createGateway({
     agnesBaseUrl: BASE_URL,
@@ -166,25 +227,27 @@ Deno.test("chat rejects undocumented tool-response messages", async () => {
       return Promise.resolve(Response.json({}));
     },
   });
-  const response = await gateway.handleChatCompletions(jsonRequest(
+  const missingId = await gateway.handleChatCompletions(jsonRequest(
     "/v1/chat/completions",
     {
       model: "chat",
-      messages: [{
-        role: "tool",
-        content: "result",
-        tool_call_id: "call_1",
-      }],
+      messages: [{ role: "tool", content: "result" }],
     },
   ));
-  const payload = await response.json();
+  const missingIdPayload = await missingId.json();
+  assertEquals(missingId.status, 400);
+  assertEquals(missingIdPayload.error.param, "messages.0.tool_call_id");
 
-  assertEquals(response.status, 400);
-  assertEquals(payload.error.param, "messages.0.role");
-  assertEquals(
-    response.headers.get("x-agnes-gateway-ignored-params"),
-    "messages.0.tool_call_id",
-  );
+  const nullWithoutCalls = await gateway.handleChatCompletions(jsonRequest(
+    "/v1/chat/completions",
+    {
+      model: "chat",
+      messages: [{ role: "assistant", content: null }],
+    },
+  ));
+  const nullPayload = await nullWithoutCalls.json();
+  assertEquals(nullWithoutCalls.status, 400);
+  assertEquals(nullPayload.error.param, "messages.0.content");
   assertEquals(calls, 0);
 });
 
@@ -1087,6 +1150,347 @@ Deno.test("video JSON reference objects use image_url and report file_id", async
     response.headers.get("x-agnes-gateway-ignored-params"),
     "input_reference.file_id,input_reference.image_url.detail,input_reference.metadata",
   );
+});
+
+Deno.test("video 2.5 maps seconds, tier size, ratio, and seed", async () => {
+  let body: JsonObject | undefined;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(Response.json({
+        id: "task_25",
+        video_id: "video_25",
+        model: "agnes-video-2.5-flash",
+        status: "queued",
+      }));
+    },
+  });
+  const response = await gateway.handleVideoGeneration(jsonRequest(
+    "/v1/videos",
+    {
+      model: "agnes-video-2.5-flash",
+      prompt: "rainy neon street",
+      seconds: "8",
+      size: "720P",
+      aspect_ratio: "16:9",
+      seed: 1101,
+      num_frames: 193,
+      unknown_option: true,
+    },
+  ));
+  const payload = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(body, {
+    model: "agnes-video-2.5-flash",
+    prompt: "rainy neon street",
+    seconds: "8",
+    size: "720P",
+    aspect_ratio: "16:9",
+    mode: "text",
+    seed: 1101,
+  });
+  assertEquals(payload.video_id, "video_25");
+  assertEquals(payload.id, "agnes-video-2.5-flash:video_25");
+  assertEquals(
+    response.headers.get("x-agnes-gateway-ignored-params"),
+    "num_frames,unknown_option",
+  );
+});
+
+Deno.test("video 2.5 maps OpenAI pixel sizes and reports a conflicting ratio", async () => {
+  let body: JsonObject | undefined;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(Response.json({ id: "task", status: "queued" }));
+    },
+  });
+  const response = await gateway.handleVideoGeneration(jsonRequest(
+    "/v1/videos",
+    {
+      model: "agnes-video-2.5",
+      prompt: "animate",
+      seconds: 6,
+      size: "1280x720",
+      aspect_ratio: "1:1",
+    },
+  ));
+
+  assertEquals(response.status, 200);
+  assertEquals(body, {
+    model: "agnes-video-2.5",
+    prompt: "animate",
+    seconds: "6",
+    size: "720P",
+    aspect_ratio: "16:9",
+    mode: "text",
+  });
+  assertEquals(
+    response.headers.get("x-agnes-gateway-ignored-params"),
+    "aspect_ratio",
+  );
+});
+
+Deno.test("video 2.5 defaults to the OpenAI portrait 720P frame", async () => {
+  let body: JsonObject | undefined;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(Response.json({ id: "task", status: "queued" }));
+    },
+  });
+  const response = await gateway.handleVideoGeneration(jsonRequest(
+    "/v1/videos",
+    { model: "agnes-video-2.5", prompt: "animate" },
+  ));
+
+  assertEquals(response.status, 200);
+  assertEquals(body, {
+    model: "agnes-video-2.5",
+    prompt: "animate",
+    seconds: "4",
+    size: "720P",
+    aspect_ratio: "9:16",
+    mode: "text",
+  });
+});
+
+Deno.test("video 2.5 keyframe media maps input_reference to first_frame", async () => {
+  let body: JsonObject | undefined;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(Response.json({ id: "task", status: "queued" }));
+    },
+  });
+  const response = await gateway.handleVideoGeneration(jsonRequest(
+    "/v1/videos",
+    {
+      model: "agnes-video-2.5-flash",
+      prompt: "animate",
+      input_reference: "https://images.example/start.png",
+      last_frame: "https://images.example/end.png",
+      image: "https://extension.example/loses.png",
+    },
+  ));
+
+  assertEquals(response.status, 200);
+  assertEquals(body, {
+    model: "agnes-video-2.5-flash",
+    prompt: "animate",
+    seconds: "4",
+    size: "720P",
+    aspect_ratio: "9:16",
+    mode: "keyframe",
+    first_frame: "https://images.example/start.png",
+    last_frame: "https://images.example/end.png",
+  });
+  assertEquals(
+    response.headers.get("x-agnes-gateway-ignored-params"),
+    "image",
+  );
+});
+
+Deno.test("video 2.5 reference media selects reference mode and hoists extra_body", async () => {
+  let body: JsonObject | undefined;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(Response.json({ id: "task", status: "queued" }));
+    },
+  });
+  const response = await gateway.handleVideoGeneration(jsonRequest(
+    "/v1/videos",
+    {
+      model: "agnes-video-2.5",
+      prompt: "reference the picture and the audio",
+      seconds: "9",
+      mode: "multi_reference",
+      extra_body: {
+        aspect_ratio: "21:9",
+        images: ["https://images.example/a.png"],
+        audios: ["https://audio.example/a.mp3"],
+        unknown: true,
+      },
+    },
+  ));
+
+  assertEquals(response.status, 200);
+  assertEquals(body, {
+    model: "agnes-video-2.5",
+    prompt: "reference the picture and the audio",
+    seconds: "9",
+    size: "720P",
+    aspect_ratio: "21:9",
+    mode: "reference",
+    images: ["https://images.example/a.png"],
+    audios: ["https://audio.example/a.mp3"],
+  });
+  assertEquals(
+    response.headers.get("x-agnes-gateway-ignored-params"),
+    "extra_body.unknown",
+  );
+});
+
+Deno.test("video 2.5 flash limits are rejected locally", async () => {
+  let calls = 0;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: () => {
+      calls += 1;
+      return Promise.resolve(Response.json({}));
+    },
+  });
+  const cases: readonly (readonly [JsonObject, string])[] = [
+    [{ prompt: "x", size: "1080P" }, "size"],
+    [{ prompt: "x", seconds: "13" }, "seconds"],
+    [{
+      prompt: "x",
+      images: Array.from(
+        { length: 6 },
+        (_, index) => `https://images.example/${index}.png`,
+      ),
+    }, "images"],
+    [{
+      prompt: "x",
+      audios: Array.from(
+        { length: 4 },
+        (_, index) => `https://audio.example/${index}.mp3`,
+      ),
+    }, "audios"],
+    [{
+      prompt: "x",
+      videos: [{ url: "https://video.example/a.mp4" }],
+    }, "videos"],
+  ];
+  for (const [input, param] of cases) {
+    const response = await gateway.handleVideoGeneration(jsonRequest(
+      "/v1/videos",
+      { model: "agnes-video-2.5-flash", ...input },
+    ));
+    const payload = await response.json();
+    assertEquals(response.status, 400);
+    assertEquals(payload.error.param, param);
+  }
+  assertEquals(calls, 0);
+});
+
+Deno.test("video 2.5 multipart reference becomes a keyframe first_frame", async () => {
+  let body: JsonObject | undefined;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return Promise.resolve(Response.json({ id: "task", status: "queued" }));
+    },
+  });
+  const form = new FormData();
+  form.set("model", "agnes-video-2.5-flash");
+  form.set("prompt", "animate");
+  form.set("seconds", "5");
+  form.set("size", "720P");
+  form.set("aspect_ratio", "16:9");
+  form.set(
+    "input_reference",
+    new File([new Uint8Array([7, 8])], "input.png", { type: "image/png" }),
+  );
+  const response = await gateway.handleVideoGeneration(formRequest(
+    "/v1/videos",
+    form,
+  ));
+
+  assertEquals(response.status, 200);
+  assertEquals(body?.first_frame, "data:image/png;base64,Bwg=");
+  assertEquals(body?.mode, "keyframe");
+  assertEquals(body?.size, "720P");
+});
+
+Deno.test("video 2.5 retrieval queries with the embedded model_name", async () => {
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (input) => {
+      assertEquals(
+        String(input),
+        "https://agnes.example/agnesapi?video_id=video_9&model_name=agnes-video-2.5-flash",
+      );
+      return Promise.resolve(Response.json({
+        id: "task_9",
+        video_id: "video_9",
+        model: "agnes-video-2.5-flash",
+        status: "completed",
+        metadata: { url: "https://media.example/v25.mp4" },
+      }));
+    },
+  });
+  const response = await gateway.handleVideoRetrieval(
+    getRequest("/v1/videos/agnes-video-2.5-flash%3Avideo_9"),
+    "agnes-video-2.5-flash:video_9",
+  );
+  const payload = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(payload.id, "agnes-video-2.5-flash:video_9");
+});
+
+Deno.test("video 2.5 retrieval never falls back to the legacy task route", async () => {
+  let calls = 0;
+  const gateway = createGateway({
+    agnesBaseUrl: BASE_URL,
+    fetch: (input) => {
+      calls += 1;
+      assertEquals(
+        String(input),
+        "https://agnes.example/agnesapi?video_id=video_missing&model_name=agnes-video-2.5-flash",
+      );
+      return Promise.resolve(Response.json({ error: {} }, { status: 404 }));
+    },
+  });
+  const response = await gateway.handleVideoRetrieval(
+    getRequest("/v1/videos/agnes-video-2.5-flash%3Avideo_missing"),
+    "agnes-video-2.5-flash:video_missing",
+  );
+
+  assertEquals(response.status, 404);
+  assertEquals(calls, 1);
+});
+
+Deno.test("video 2.5 content resolves the completed metadata.url", async () => {
+  let calls = 0;
+  const fetch: FetchLike = (input) => {
+    calls += 1;
+    if (calls === 1) {
+      assertEquals(
+        String(input),
+        "https://agnes.example/agnesapi?video_id=video_5&model_name=agnes-video-2.5-flash",
+      );
+      return Promise.resolve(Response.json({
+        video_id: "video_5",
+        model: "agnes-video-2.5-flash",
+        status: "completed",
+        metadata: { url: "https://media.example/v25.mp4" },
+      }));
+    }
+    assertEquals(String(input), "https://media.example/v25.mp4");
+    return Promise.resolve(
+      new Response(new Uint8Array([1, 2]), {
+        headers: { "content-type": "video/mp4" },
+      }),
+    );
+  };
+  const gateway = createGateway({ agnesBaseUrl: BASE_URL, fetch });
+  const response = await gateway.handleVideoContent(
+    getRequest("/v1/videos/agnes-video-2.5-flash%3Avideo_5/content"),
+    "agnes-video-2.5-flash:video_5",
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get("content-type"), "video/mp4");
 });
 
 Deno.test("video retrieval uses the documented stateless Agnes video-ID query", async () => {

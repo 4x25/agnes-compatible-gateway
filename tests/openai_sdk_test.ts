@@ -68,6 +68,23 @@ Deno.test("official OpenAI TypeScript SDK can use every gateway workflow", async
         }));
       }
       if (url.pathname.endsWith("/videos") && init?.method === "POST") {
+        const created = typeof init.body === "string"
+          ? JSON.parse(init.body) as Record<string, unknown>
+          : {};
+        if (created.model === "agnes-video-2.5-flash") {
+          return Promise.resolve(Response.json({
+            id: "task_sdk25",
+            task_id: "task_sdk25",
+            video_id: "video_sdk25",
+            object: "video",
+            model: "agnes-video-2.5-flash",
+            status: "queued",
+            progress: 0,
+            created_at: 1,
+            seconds: "4",
+            size: "720P",
+          }));
+        }
         return Promise.resolve(Response.json({
           id: "task_sdk",
           task_id: "task_sdk",
@@ -95,6 +112,28 @@ Deno.test("official OpenAI TypeScript SDK can use every gateway workflow", async
           seconds: "4",
           size: "720x1280",
           url: "https://media.test/video.mp4",
+          error: null,
+        }));
+      }
+      if (
+        url.pathname.endsWith("/agnesapi") &&
+        url.searchParams.get("video_id") === "video_sdk25"
+      ) {
+        assertEquals(
+          url.searchParams.get("model_name"),
+          "agnes-video-2.5-flash",
+        );
+        return Promise.resolve(Response.json({
+          id: "task_sdk25",
+          task_id: "task_sdk25",
+          video_id: "video_sdk25",
+          object: "video",
+          model: "agnes-video-2.5-flash",
+          status: "completed",
+          progress: 100,
+          seconds: "4",
+          size: "720P",
+          metadata: { url: "https://media.test/video-25.mp4" },
           error: null,
         }));
       }
@@ -201,6 +240,42 @@ Deno.test("official OpenAI TypeScript SDK can use every gateway workflow", async
       (body as Record<string, unknown>).model === "agnes-video-v2.0"
     ) as Record<string, unknown>;
     assertStringIncludes(String(videoBody.image), "data:image/png;base64,");
+
+    // The 2.5 family uses the seconds/size/ratio/mode contract and requires
+    // the creation model on retrieval, which the public ID carries.
+    const created25 = await client.videos.create({
+      model: "agnes-video-2.5-flash",
+      prompt: "Slow camera push",
+      input_reference: videoFile,
+      seconds: "4",
+      size: "1280x720",
+    });
+    assertEquals(created25.id, "agnes-video-2.5-flash:video_sdk25");
+    assertEquals(
+      (created25 as unknown as Record<string, unknown>).video_id,
+      "video_sdk25",
+    );
+
+    const retrieved25 = await client.videos.retrieve(created25.id);
+    assertEquals(retrieved25.status, "completed");
+    const content25 = await client.videos.downloadContent(created25.id);
+    assertEquals(
+      [...new Uint8Array(await content25.arrayBuffer())],
+      [0, 1, 2, 3],
+    );
+    const video25Body = upstreamBodies.find((body) =>
+      typeof body === "object" && body !== null &&
+      (body as Record<string, unknown>).model === "agnes-video-2.5-flash"
+    ) as Record<string, unknown>;
+    assertEquals(video25Body.seconds, "4");
+    assertEquals(video25Body.size, "720P");
+    assertEquals(video25Body.aspect_ratio, "16:9");
+    assertEquals(video25Body.mode, "keyframe");
+    assertStringIncludes(
+      String(video25Body.first_frame),
+      "data:image/png;base64,",
+    );
+    assert(!mediaRequestHadAuthorization);
   } finally {
     await server.shutdown();
   }

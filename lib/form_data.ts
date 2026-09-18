@@ -9,7 +9,7 @@ const NUMBER_FIELDS = new Set([
   "seed",
 ]);
 const BOOLEAN_FIELDS = new Set(["return_base64"]);
-const JSON_FIELDS = new Set(["extra_body", "images"]);
+const JSON_FIELDS = new Set(["extra_body", "images", "audios", "videos"]);
 
 /** Parsed scalar fields and image-like entries from an OpenAI multipart body. */
 export interface ParsedMultipartInput {

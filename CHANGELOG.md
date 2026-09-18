@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Agnes 3.0 Flash compatibility: `tool_calls`/`tool_call_id` message fields
+  complete the OpenAI function-calling round trip, including assistant messages
+  whose `content` is `null`.
+- Agnes Video 2.5 and 2.5 Flash compatibility: `seconds`/`size`/`aspect_ratio`/
+  `mode` translation with `first_frame`/`last_frame`/`images`/`audios`/`videos`
+  media fields, `extra_body` hoisting, local Flash limit validation, and
+  `metadata.url` resolution for completed tasks.
+- Video 2.5 public IDs embed the creation model (`<model>:<video_id>`) so the
+  documented stateless query can send the exact `model_name` it requires.
+- Dated live evidence for the three new models, including the Chat tool round
+  trip, in
+  [docs/contract-results/2026-09-18-agnes-3-flash-family.md](docs/contract-results/2026-09-18-agnes-3-flash-family.md).
+
+### Changed
+
+- Landing-page defaults, README examples, compatibility matrices, and OpenAPI
+  document now reference `agnes-3.0-flash`, `agnes-image-2.5-flash`, and
+  `agnes-video-2.5-flash`.
+- Gated live and deployment probes default to the newest models and exercise the
+  2.5 video dialect with model-qualified polling.
+
+### Fixed
+
+- Completed Agnes Video 2.5 tasks now resolve their media URL from
+  `metadata.url`, in addition to the V2.0 top-level `url`.
+
 ## [0.1.0] - 2026-07-19
 
 ### Added
