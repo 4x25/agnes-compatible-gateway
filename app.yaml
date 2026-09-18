@@ -1,0 +1,21 @@
+kind: wasmer.io/App.v0
+package: .
+annotations:
+  anybuild.run/config:
+    commands:
+      install: npm install
+      build: npm run build
+      start: node dist/index.js
+    edgejs_enable: true
+    edgejs_precompile: true
+    name: out
+    node_install_inputs:
+      - package.json
+    node_package_manager: npm
+    node_package_name: agnes
+    node_remove_native_binaries: true
+    node_server: hono
+    node_build_command: npm run build
+  anybuild.run/provider: node
+  anybuild.run/version: 0.28.4
+  wasmer.io/version: 7.4.1

@@ -1,11 +1,29 @@
-# Deno
-# https://deno.com/
+# dev
+.yarn/
+!.yarn/releases
+.vscode/*
+!.vscode/launch.json
+!.vscode/*.code-snippets
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/shelf
 
-# Cache directory (when using project-local DENO_DIR)
-# https://docs.deno.com/runtime/fundamentals/setup/#deno_dir
-.deno/
+# deps
+node_modules/
+package-lock.json
 
-# Coverage reports
-# https://docs.deno.com/runtime/reference/cli/coverage/
-coverage/
-*.lcov
+# env
+.env
+.env.production
+
+# logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# misc
+.DS_Store
