@@ -16,6 +16,9 @@ package-lock.json
 .env
 .env.production
 
+# build output
+dist/
+
 # logs
 logs/
 *.log
@@ -27,3 +30,7 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# test artifacts (kept locally, not committed)
+docs/test-report.md
+docs/test-results/
