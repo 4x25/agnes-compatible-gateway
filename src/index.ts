@@ -1,19 +1,14 @@
 import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
-import { serveStatic } from '@hono/node-server/serve-static'
-import { Page } from './page.js'
+import { createApp } from './app.js'
 
-const app = new Hono()
+const app = createApp()
 
-app.use('/assets/*', serveStatic({ root: './dist' }))
-
-app.get('/', (c) => {
-  return c.html(Page())
-})
-
-serve({
-  fetch: app.fetch,
-  port: 3000
-}, (info) => {
-  console.log(`Server is running on http://localhost:${info.port}`)
-})
+serve(
+  {
+    fetch: app.fetch,
+    port: Number(process.env.PORT ?? 3000)
+  },
+  (info) => {
+    console.log(JSON.stringify({ level: 'info', msg: 'listening', port: info.port }))
+  }
+)
