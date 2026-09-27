@@ -48,7 +48,7 @@ function buildUpstreamBody(plan: GenerationPlan): string {
  * atomic semantics: any failed sub-request fails the whole call, no partial result is returned.
  */
 async function runGenerationPlan(c: Context<AppEnv>, plan: GenerationPlan): Promise<Response> {
-  const { baseUrl } = resolveUpstreamConfig(c.env)
+  const { baseUrl } = resolveUpstreamConfig(c.env, c.get('agnesBaseUrl'))
   const apiKey = c.get('agnesKey')
   const payloadText = buildUpstreamBody(plan)
 
@@ -91,7 +91,7 @@ function isAdaptedModel(model: unknown): boolean {
 }
 
 export async function createImage(c: Context<AppEnv>): Promise<Response> {
-  const { baseUrl } = resolveUpstreamConfig(c.env)
+  const { baseUrl } = resolveUpstreamConfig(c.env, c.get('agnesBaseUrl'))
   const apiKey = c.get('agnesKey')
   const body = await readJsonBody(c.req.raw)
   const model = typeof body.model === 'string' ? body.model : ''

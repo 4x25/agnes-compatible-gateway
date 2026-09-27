@@ -6,11 +6,16 @@ import { callUpstream, passthroughResponse, readUpstreamJson, TIMEOUT, upstreamE
 import { decodeVideoId, encodeVideoId, normalizeVideoPayload, planVideoCreate, videoPixelsFromUpstreamSize } from '../lib/videos.js'
 import type { AppEnv, JsonObject } from '../types.js'
 
+/** Reads the video id from the matched route, falling back to the dynamic-base URL context value. */
+function readVideoId(c: Context<AppEnv>): string {
+  return decodeURIComponent(c.req.param('video_id') || c.get('videoId') || '')
+}
+
 async function fetchVideoStatus(
   c: Context<AppEnv>,
   rawId: string
 ): Promise<{ payload: JsonObject; decoded: ReturnType<typeof decodeVideoId> }> {
-  const { queryUrl } = resolveUpstreamConfig(c.env)
+  const { queryUrl } = resolveUpstreamConfig(c.env, c.get('agnesBaseUrl'))
   const decoded = decodeVideoId(rawId)
   const search = new URLSearchParams({ video_id: decoded.videoId })
   if (decoded.model) search.set('model_name', decoded.model)
@@ -35,7 +40,7 @@ async function fetchVideoStatus(
 }
 
 export async function createVideo(c: Context<AppEnv>): Promise<Response> {
-  const { baseUrl } = resolveUpstreamConfig(c.env)
+  const { baseUrl } = resolveUpstreamConfig(c.env, c.get('agnesBaseUrl'))
   const apiKey = c.get('agnesKey')
   const contentType = c.req.header('content-type') ?? ''
   if (/multipart\/form-data/i.test(contentType)) {
@@ -87,7 +92,7 @@ export async function createVideo(c: Context<AppEnv>): Promise<Response> {
 }
 
 export async function getVideo(c: Context<AppEnv>): Promise<Response> {
-  const rawId = decodeURIComponent(c.req.param('video_id') ?? '')
+  const rawId = readVideoId(c)
   if (!rawId) throw invalidRequest('`video_id` is required.', { param: 'video_id', code: 'invalid_video_id' })
 
   const { payload, decoded } = await fetchVideoStatus(c, rawId)
@@ -115,7 +120,7 @@ export async function getVideoContent(c: Context<AppEnv>): Promise<Response> {
     })
   }
 
-  const rawId = decodeURIComponent(c.req.param('video_id') ?? '')
+  const rawId = readVideoId(c)
   if (!rawId) throw invalidRequest('`video_id` is required.', { param: 'video_id', code: 'invalid_video_id' })
 
   const { payload } = await fetchVideoStatus(c, rawId)

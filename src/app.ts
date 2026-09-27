@@ -1,12 +1,37 @@
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { ApiError, errorBody, unauthorized } from './lib/errors.js'
+import { parseDynamicBase } from './lib/dynamic-base.js'
 import { Page } from './page.js'
 import { chatCompletions } from './routes/chat.js'
 import { createImage, editImage } from './routes/images.js'
 import { createVideo, getVideo, getVideoContent } from './routes/videos.js'
 import { listModels } from './routes/models.js'
 import type { AppEnv } from './types.js'
+
+type RouteHandler = (c: Context<AppEnv>) => Promise<Response>
+
+/**
+ * Terminal handlers addressable through a dynamic base URL path
+ * (e.g. `/https://upstream.example.com/v1/chat/completions`), keyed by method + gateway route.
+ */
+const DYNAMIC_ROUTES: Record<string, RouteHandler> = {
+  'POST /v1/chat/completions': chatCompletions,
+  'POST /v1/images/generations': createImage,
+  'POST /v1/images/edits': editImage,
+  'GET /v1/models': listModels,
+  'POST /v1/videos': createVideo,
+  'GET /v1/videos/:video_id': getVideo,
+  'GET /v1/videos/:video_id/content': getVideoContent
+}
+
+function requireApiKey(c: Context<AppEnv>): void {
+  const header = c.req.header('authorization') ?? ''
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
+  const key = match?.[1]?.trim()
+  if (!key) throw unauthorized()
+  c.set('agnesKey', key)
+}
 
 /**
  * The gateway's own public origin, used by the docs page. Prefers the Host header
@@ -48,12 +73,27 @@ export function createApp() {
   })
 
   app.use('/v1/*', async (c, next) => {
-    const header = c.req.header('authorization') ?? ''
-    const match = /^Bearer\s+(.+)$/i.exec(header.trim())
-    const key = match?.[1]?.trim()
-    if (!key) throw unauthorized()
-    c.set('agnesKey', key)
+    requireApiKey(c)
     await next()
+  })
+
+  // Dynamic base URL: `/https://upstream.example.com/v1/...` proxies to that upstream base,
+  // overriding `AGNES_BASE_URL`, while reusing the exact same terminal handlers.
+  app.use('*', async (c, next) => {
+    const dynamic = parseDynamicBase(c.req.path)
+    if (!dynamic) {
+      await next()
+      return
+    }
+    const handler = DYNAMIC_ROUTES[`${c.req.method} ${dynamic.routePath}`]
+    if (!handler) {
+      await next()
+      return
+    }
+    requireApiKey(c)
+    c.set('agnesBaseUrl', dynamic.baseUrl)
+    if (dynamic.videoId !== undefined) c.set('videoId', dynamic.videoId)
+    return handler(c)
   })
 
   app.get('/', (c) => c.html(Page({ origin: gatewayOrigin(c) })))

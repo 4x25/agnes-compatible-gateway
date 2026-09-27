@@ -21,6 +21,20 @@
 所有 `/v1/*` 需要 `Authorization: Bearer <Agnes key>`；密钥只在内存中转发，不落盘、不记日志。
 CORS 完全开放（`Access-Control-Allow-Origin: *`）。
 
+### 动态 baseUrl（覆盖上游）
+
+除了服务端环境变量，调用方还可以把上游 base 直接拼在网关地址后面当作 `base_url` 使用：
+
+```
+https://example.com/https://upstream.example.com/v1
+```
+
+此时请求会转发到 `https://upstream.example.com/v1`，**优先级高于 `AGNES_BASE_URL`**；鉴权、模型适配、
+请求体与响应格式等其他行为完全不变。例如视频查询仍按该 base 推导 `<origin><prefix>/agnesapi`。
+
+部分 CDN（如 Cloudflare）会把路径中的 `//` 折叠成 `/`，网关已兼容折叠写法，
+`https://example.com/https:/upstream.example.com/v1` 与完整写法等价。
+
 ## 开发
 
 ```bash
@@ -35,7 +49,7 @@ npm start            # 运行 dist/index.js
 
 | 变量 | 必填 | 说明 |
 | --- | --- | --- |
-| `AGNES_BASE_URL` | 否 | 上游 base，缺省 `https://apihub.agnes-ai.com/v1` |
+| `AGNES_BASE_URL` | 否 | 上游 base，缺省 `https://apihub.agnes-ai.com/v1`；可被请求路径中的动态 baseUrl 覆盖 |
 | `PORT` | 否 | 本地监听端口，缺省 3000 |
 
 ## 测试

@@ -28,8 +28,8 @@ describe('首页接口文档', () => {
     const html = await response.text()
     expect(html).not.toContain('本网关域名')
     expect(html).not.toContain('<本网关域名>')
-    // 8 个代码示例 + 1 处内联脚本中的 renderedOrigin
-    expect(html.split('https://gateway.example.com').length - 1).toBe(9)
+    // 9 个代码示例 + 1 处内联脚本中的 renderedOrigin
+    expect(html.split('https://gateway.example.com').length - 1).toBe(10)
   })
 
   it('示例中的 URL 拼接正确，不出现重复协议', async () => {
@@ -41,7 +41,7 @@ describe('首页接口文档', () => {
     // 每个示例里的网关地址都必须是完整、可复制的 URL（example.com 等第三方示例不计入）
     const gatewayUrls = preBlocks.flatMap((block) => [...block.matchAll(/https?:\/\/\S+/g)].map((match) => match[0]))
       .filter((raw) => raw.includes('gateway.example.com'))
-    expect(gatewayUrls).toHaveLength(8)
+    expect(gatewayUrls).toHaveLength(9)
     for (const raw of gatewayUrls) expect(raw).toMatch(/^https:\/\/gateway\.example\.com\//)
   })
 

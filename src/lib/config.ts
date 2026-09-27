@@ -39,8 +39,12 @@ function readEnv(env: unknown, name: string): string | undefined {
   return undefined
 }
 
-export function resolveUpstreamConfig(env: unknown): UpstreamConfig {
-  const rawBase = readEnv(env, 'AGNES_BASE_URL') ?? DEFAULT_AGNES_BASE_URL
+/**
+ * Resolves the upstream base. A dynamic base extracted from the request path always wins over
+ * the `AGNES_BASE_URL` environment variable; blank values fall through to the env/default.
+ */
+export function resolveUpstreamConfig(env: unknown, dynamicBaseUrl?: string): UpstreamConfig {
+  const rawBase = dynamicBaseUrl?.trim() || readEnv(env, 'AGNES_BASE_URL') || DEFAULT_AGNES_BASE_URL
   const baseUrl = rawBase.replace(/\/+$/, '')
   return { baseUrl, queryUrl: deriveQueryUrl(baseUrl) }
 }

@@ -4,7 +4,7 @@ import { callUpstream, passthroughResponse, TIMEOUT, upstreamErrorFrom } from '.
 import type { AppEnv } from '../types.js'
 
 export async function listModels(c: Context<AppEnv>): Promise<Response> {
-  const { baseUrl } = resolveUpstreamConfig(c.env)
+  const { baseUrl } = resolveUpstreamConfig(c.env, c.get('agnesBaseUrl'))
   const upstream = await callUpstream({
     url: `${baseUrl}/models`,
     method: 'GET',

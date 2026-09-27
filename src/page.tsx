@@ -75,6 +75,24 @@ client.chat.completions.create(model="agnes-3.0-flash", messages=[{"role": "user
           </section>
 
           <section style={sectionStyle}>
+            <h2 style={h2Style}>动态 baseUrl（自定义上游）</h2>
+            <p style={pStyle}>
+              把上游 base 直接拼在网关地址之后作为 <code style={codeStyle}>base_url</code>，请求就会转发到该上游，
+              优先级高于服务端配置的 <code style={codeStyle}>AGNES_BASE_URL</code>；鉴权与模型适配等其余行为不变。
+            </p>
+            <Code>{`from openai import OpenAI
+
+client = OpenAI(base_url="${origin}/https://upstream.example.com/v1", api_key=AGNES_KEY)
+client.chat.completions.create(model="agnes-3.0-flash", messages=[{"role": "user", "content": "你好"}])`}</Code>
+            <div style={noteStyle}>
+              <p style={{ margin: 0, color: '#334155' }}>
+                部分 CDN（如 Cloudflare）会把路径中的 <code style={codeStyle}>//</code> 折叠成 <code style={codeStyle}>/</code>，
+                此时 <code style={codeStyle}>https:/upstream.example.com/v1</code> 与完整写法等价。
+              </p>
+            </div>
+          </section>
+
+          <section style={sectionStyle}>
             <h2 style={h2Style}>端点一览</h2>
             <table style={tableStyle}>
               <thead>

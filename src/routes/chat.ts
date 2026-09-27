@@ -6,7 +6,7 @@ import { callUpstream, passthroughResponse, readUpstreamJson, SSE_HEADERS, TIMEO
 import type { AppEnv, JsonObject } from '../types.js'
 
 export async function chatCompletions(c: Context<AppEnv>): Promise<Response> {
-  const { baseUrl } = resolveUpstreamConfig(c.env)
+  const { baseUrl } = resolveUpstreamConfig(c.env, c.get('agnesBaseUrl'))
   const apiKey = c.get('agnesKey')
   const body = await readJsonBody(c.req.raw)
   const model = typeof body.model === 'string' ? body.model : ''
